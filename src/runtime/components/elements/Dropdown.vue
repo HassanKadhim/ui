@@ -1,10 +1,11 @@
 <template>
-  <Menu v-slot="{ open }" as="div" :class="ui.wrapper" @mouseleave="onMouseLeave">
-    <MenuButton
+  <!-- eslint-disable-next-line vue/no-template-shadow -->
+  <HMenu v-slot="{ open }" as="div" :class="ui.wrapper" v-bind="attrs" @mouseleave="onMouseLeave">
+    <HMenuButton
       ref="trigger"
       as="div"
       :disabled="disabled"
-      class="inline-flex w-full"
+      :class="ui.trigger"
       role="button"
       @mouseover="onMouseOver"
     >
@@ -13,92 +14,89 @@
           Open
         </button>
       </slot>
-    </MenuButton>
+    </HMenuButton>
 
     <div v-if="open && items.length" ref="container" :class="[ui.container, ui.width]" :style="containerStyle" @mouseover="onMouseOver">
-      <transition appear v-bind="ui.transition">
-        <MenuItems :class="[ui.base, ui.divide, ui.ring, ui.rounded, ui.shadow, ui.background, ui.height]" static>
-          <div v-for="(subItems, index) of items" :key="index" :class="ui.padding">
-            <MenuItem v-for="(item, subIndex) of subItems" :key="subIndex" v-slot="{ active, disabled: itemDisabled }" :disabled="item.disabled">
-              <ULinkCustom
-                v-bind="omit(item, ['label', 'icon', 'iconClass', 'avatar', 'shortcuts', 'click'])"
-                :class="[ui.item.base, ui.item.padding, ui.item.size, ui.item.rounded, active ? ui.item.active : ui.item.inactive, itemDisabled && ui.item.disabled]"
-                @click="item.click"
-              >
-                <slot :name="item.slot || 'item'" :item="item">
-                  <UIcon v-if="item.icon" :name="item.icon" :class="[ui.item.icon.base, active ? ui.item.icon.active : ui.item.icon.inactive, item.iconClass]" />
-                  <UAvatar v-else-if="item.avatar" v-bind="{ size: ui.item.avatar.size, ...item.avatar }" :class="ui.item.avatar.base" />
+      <Transition appear v-bind="ui.transition">
+        <div>
+          <div v-if="popper.arrow" data-popper-arrow :class="Object.values(ui.arrow)" />
 
-                  <span class="truncate">{{ item.label }}</span>
+          <HMenuItems :class="[ui.base, ui.divide, ui.ring, ui.rounded, ui.shadow, ui.background, ui.height]" static>
+            <div v-for="(subItems, index) of items" :key="index" :class="ui.padding">
+              <NuxtLink v-for="(item, subIndex) of subItems" :key="subIndex" v-slot="{ href, target, rel, navigate, isExternal }" v-bind="omit(item, ['label', 'labelClass', 'slot', 'icon', 'iconClass', 'avatar', 'shortcuts', 'disabled', 'class', 'click'])" custom>
+                <HMenuItem v-slot="{ active, disabled: itemDisabled, close }" :disabled="item.disabled">
+                  <component
+                    :is="!!href ? 'a' : 'button'"
+                    :href="!itemDisabled ? href : undefined"
+                    :rel="rel"
+                    :target="target"
+                    :class="twMerge(twJoin(ui.item.base, ui.item.padding, ui.item.size, ui.item.rounded, active ? ui.item.active : ui.item.inactive, itemDisabled && ui.item.disabled), item.class)"
+                    @click="onClick($event, item, { href, navigate, close, isExternal })"
+                  >
+                    <slot :name="item.slot || 'item'" :item="item">
+                      <UIcon v-if="item.icon" :name="item.icon" :class="twMerge(twJoin(ui.item.icon.base, active ? ui.item.icon.active : ui.item.icon.inactive), item.iconClass)" />
+                      <UAvatar v-else-if="item.avatar" v-bind="{ size: ui.item.avatar.size, ...item.avatar }" :class="ui.item.avatar.base" />
 
-                  <span v-if="item.shortcuts?.length" :class="ui.item.shortcuts">
-                    <UKbd v-for="shortcut of item.shortcuts" :key="shortcut">{{ shortcut }}</UKbd>
-                  </span>
-                </slot>
-              </ULinkCustom>
-            </MenuItem>
-          </div>
-        </MenuItems>
-      </transition>
+                      <span :class="twMerge(ui.item.label, item.labelClass)">{{ item.label }}</span>
+
+                      <span v-if="item.shortcuts?.length" :class="ui.item.shortcuts">
+                        <UKbd v-for="shortcut of item.shortcuts" :key="shortcut">{{ shortcut }}</UKbd>
+                      </span>
+                    </slot>
+                  </component>
+                </HMenuItem>
+              </NuxtLink>
+            </div>
+          </HMenuItems>
+        </div>
+      </Transition>
     </div>
-  </Menu>
+  </HMenu>
 </template>
 
 <script lang="ts">
-import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/vue'
+import { defineComponent, ref, computed, watch, toRef, onMounted, resolveComponent } from 'vue'
 import type { PropType } from 'vue'
-import type { RouteLocationRaw } from 'vue-router'
-import { defineComponent, ref, computed, onMounted } from 'vue'
+import { Menu as HMenu, MenuButton as HMenuButton, MenuItems as HMenuItems, MenuItem as HMenuItem } from '@headlessui/vue'
 import { defu } from 'defu'
-import { omit } from 'lodash-es'
+import { twMerge, twJoin } from 'tailwind-merge'
 import UIcon from '../elements/Icon.vue'
 import UAvatar from '../elements/Avatar.vue'
 import UKbd from '../elements/Kbd.vue'
-import ULinkCustom from '../elements/LinkCustom.vue'
+import { useUI } from '../../composables/useUI'
 import { usePopper } from '../../composables/usePopper'
-import type { Avatar } from '../../types/avatar'
-import type { PopperOptions } from '../../types'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { mergeConfig, omit } from '../../utils'
+import type { DropdownItem, PopperOptions, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { dropdown } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof dropdown>(appConfig.ui.strategy, appConfig.ui.dropdown, dropdown)
 
 export default defineComponent({
   components: {
-    // eslint-disable-next-line vue/no-reserved-component-names
-    Menu,
-    MenuButton,
-    MenuItems,
-    MenuItem,
+    HMenu,
+    HMenuButton,
+    HMenuItems,
+    HMenuItem,
     UIcon,
     UAvatar,
-    UKbd,
-    ULinkCustom
+    UKbd
   },
+  inheritAttrs: false,
   props: {
     items: {
-      type: Array as PropType<{
-        to?: string | RouteLocationRaw
-        exact?: boolean
-        label: string
-        slot?: string
-        icon?: string
-        iconClass?: string
-        avatar?: Partial<Avatar>
-        shortcuts?: string[]
-        disabled?: boolean
-        click?: Function
-      }[][]>,
+      type: Array as PropType<DropdownItem[][]>,
       default: () => []
     },
     mode: {
-      type: String,
+      type: String as PropType<'click' | 'hover'>,
       default: 'click',
-      validator: (value: string) => {
-        return ['click', 'hover'].includes(value)
-      }
+      validator: (value: string) => ['click', 'hover'].includes(value)
+    },
+    open: {
+      type: Boolean,
+      default: undefined
     },
     disabled: {
       type: Boolean,
@@ -110,22 +108,24 @@ export default defineComponent({
     },
     openDelay: {
       type: Number,
-      default: 50
+      default: 0
     },
     closeDelay: {
       type: Number,
       default: 0
     },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.dropdown>>,
-      default: () => appConfig.ui.dropdown
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
-  setup (props) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
-
-    const ui = computed<Partial<typeof appConfig.ui.dropdown>>(() => defu({}, props.ui, appConfig.ui.dropdown))
+  emits: ['update:open'],
+  setup (props, { emit }) {
+    const { ui, attrs } = useUI('dropdown', toRef(props, 'ui'), config, toRef(props, 'class'))
 
     const popper = computed<PopperOptions>(() => defu(props.mode === 'hover' ? { offsetDistance: 0 } : {}, props.popper, ui.value.popper as PopperOptions))
 
@@ -138,21 +138,46 @@ export default defineComponent({
     let closeTimeout: NodeJS.Timeout | null = null
 
     onMounted(() => {
-      setTimeout(() => {
-        // @ts-expect-error internals
-        const menuProvides = trigger.value?.$.provides
-        if (!menuProvides) {
-          return
-        }
-        const menuProvidesSymbols = Object.getOwnPropertySymbols(menuProvides)
-        menuApi.value = menuProvidesSymbols.length && menuProvides[menuProvidesSymbols[0]]
-      }, 200)
+      // @ts-expect-error internals
+      const menuProvides = trigger.value?.$.provides
+      if (!menuProvides) {
+        return
+      }
+      const menuProvidesSymbols = Object.getOwnPropertySymbols(menuProvides)
+      menuApi.value = menuProvidesSymbols.length && menuProvides[menuProvidesSymbols[0]]
+
+      if (props.open) {
+        menuApi.value?.openMenu()
+      }
     })
 
     const containerStyle = computed(() => {
-      const offsetDistance = (props.popper as PopperOptions)?.offsetDistance || (ui.value.popper as PopperOptions)?.offsetDistance || 8
+      if (props.mode !== 'hover') {
+        return {}
+      }
 
-      return props.mode === 'hover' ? { paddingTop: `${offsetDistance}px`, paddingBottom: `${offsetDistance}px` } : {}
+      const offsetDistance = (props.popper as PopperOptions)?.offsetDistance || (ui.value.popper as PopperOptions)?.offsetDistance || 8
+      const placement = popper.value.placement?.split('-')[0]
+      const padding = `${offsetDistance}px`
+
+      if (placement === 'top' || placement === 'bottom') {
+        return {
+          paddingTop: padding,
+          paddingBottom: padding
+        }
+      } else if (placement === 'left' || placement === 'right') {
+        return {
+          paddingLeft: padding,
+          paddingRight: padding
+        }
+      } else {
+        return {
+          paddingTop: padding,
+          paddingBottom: padding,
+          paddingLeft: padding,
+          paddingRight: padding
+        }
+      }
     })
 
     function onMouseOver () {
@@ -195,15 +220,53 @@ export default defineComponent({
       }, props.closeDelay)
     }
 
+    function onClick (e, item, { href, navigate, close, isExternal }) {
+      if (item.click) {
+        item.click(e)
+      }
+
+      if (href && !isExternal) {
+        navigate(e)
+
+        close()
+      }
+    }
+
+    watch(() => props.open, (newValue: boolean, oldValue: boolean) => {
+      if (!menuApi.value) return
+      if (oldValue === undefined || newValue === oldValue) return
+
+      if (newValue) {
+        menuApi.value.openMenu()
+      } else {
+        menuApi.value.closeMenu()
+      }
+    })
+
+    watch(() => menuApi.value?.menuState, (newValue: number, oldValue: number) => {
+      if (oldValue === undefined || newValue === oldValue) return
+
+      emit('update:open', newValue === 0)
+    })
+
+    const NuxtLink = resolveComponent('NuxtLink')
+
     return {
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
+      attrs,
+      // eslint-disable-next-line vue/no-dupe-keys
+      popper,
       trigger,
       container,
       containerStyle,
       onMouseOver,
       onMouseLeave,
-      omit
+      onClick,
+      omit,
+      twMerge,
+      twJoin,
+      NuxtLink
     }
   }
 })

@@ -1,7 +1,7 @@
-﻿<template>
+<template>
   <div :class="wrapperClass">
     <input
-      :id="name"
+      :id="inputId"
       ref="input"
       v-model.number="value"
       :name="name"
@@ -10,8 +10,9 @@
       :disabled="disabled"
       :step="step"
       type="range"
-      :class="[inputClass, thumbClass]"
-      v-bind="$attrs"
+      :class="[inputClass, thumbClass, trackClass]"
+      v-bind="attrs"
+      @change="onChange"
     >
 
     <span :class="progressClass" :style="progressStyle" />
@@ -19,14 +20,19 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent } from 'vue'
+import { computed, toRef, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { classNames } from '../../utils'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import { useUI } from '../../composables/useUI'
+import { useFormGroup } from '../../composables/useFormGroup'
+import { mergeConfig } from '../../utils'
+import type { RangeSize, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { range } from '#ui/ui.config'
+import colors from '#ui-colors'
+
+const config = mergeConfig<typeof range>(appConfig.ui.strategy, appConfig.ui.range, range)
 
 export default defineComponent({
   inheritAttrs: false,
@@ -34,6 +40,10 @@ export default defineComponent({
     modelValue: {
       type: Number,
       default: 0
+    },
+    id: {
+      type: String,
+      default: null
     },
     name: {
       type: String,
@@ -56,30 +66,37 @@ export default defineComponent({
       default: 1
     },
     size: {
-      type: String,
-      default: () => appConfig.ui.range.default.size,
+      type: String as PropType<RangeSize>,
+      default: null,
       validator (value: string) {
-        return Object.keys(appConfig.ui.range.size).includes(value)
+        return Object.keys(config.size).includes(value)
       }
     },
     color: {
-      type: String,
-      default: () => appConfig.ui.range.default.color,
+      type: String as PropType<typeof colors[number]>,
+      default: () => config.default.color,
       validator (value: string) {
         return appConfig.ui.colors.includes(value)
       }
     },
+    inputClass: {
+      type: String,
+      default: null
+    },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.range>>,
-      default: () => appConfig.ui.range
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'change'],
   setup (props, { emit }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
+    const { ui, attrs } = useUI('range', toRef(props, 'ui'), config)
 
-    const ui = computed<Partial<typeof appConfig.ui.range>>(() => defu({}, props.ui, appConfig.ui.range))
+    const { emitFormChange, inputId, color, size, name } = useFormGroup(props, config)
 
     const value = computed({
       get () {
@@ -90,58 +107,82 @@ export default defineComponent({
       }
     })
 
+    const onChange = (event: Event) => {
+      emit('change', event)
+      emitFormChange()
+    }
+
     const wrapperClass = computed(() => {
-      return classNames(
+      return twMerge(twJoin(
         ui.value.wrapper,
-        ui.value.size[props.size]
-      )
+        ui.value.size[size.value]
+      ), props.class)
     })
 
     const inputClass = computed(() => {
-      return classNames(
+      return twMerge(twJoin(
         ui.value.base,
         ui.value.background,
         ui.value.rounded,
-        ui.value.ring.replaceAll('{color}', props.color),
-        ui.value.size[props.size]
-      )
+        color.value && ui.value.ring.replaceAll('{color}', color.value),
+        ui.value.size[size.value]
+      ), props.inputClass)
     })
 
     const thumbClass = computed(() => {
-      return classNames(
+      return twJoin(
         ui.value.thumb.base,
         // Intermediate class to allow thumb ring or background color (set to `current`) as it's impossible to safelist with arbitrary values
-        ui.value.thumb.color.replaceAll('{color}', props.color),
+        color.value && ui.value.thumb.color.replaceAll('{color}', color.value),
         ui.value.thumb.ring,
         ui.value.thumb.background,
-        ui.value.thumb.size[props.size]
+        ui.value.thumb.size[size.value]
+      )
+    })
+
+    const trackClass = computed(() => {
+      return twJoin(
+        ui.value.track.base,
+        ui.value.track.background,
+        ui.value.track.rounded,
+        ui.value.track.size[size.value]
       )
     })
 
     const progressClass = computed(() => {
-      return classNames(
+      return twJoin(
         ui.value.progress.base,
         ui.value.progress.rounded,
-        ui.value.progress.background.replaceAll('{color}', props.color),
-        ui.value.size[props.size]
+        color.value && ui.value.progress.background.replaceAll('{color}', color.value),
+        ui.value.progress.size[size.value]
       )
     })
 
     const progressStyle = computed(() => {
+      const { modelValue, min, max } = props
+      const clampedValue = Math.max(min, Math.min(modelValue, max))
+      const relativeValue = (clampedValue - min) / (max - min)
       return {
-        width: `${(props.modelValue / props.max) * 100}%`
+        width: `${relativeValue * 100}%`
       }
     })
 
     return {
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
+      attrs,
+      // eslint-disable-next-line vue/no-dupe-keys
+      name,
+      inputId,
       value,
       wrapperClass,
+      // eslint-disable-next-line vue/no-dupe-keys
       inputClass,
       thumbClass,
+      trackClass,
       progressClass,
-      progressStyle
+      progressStyle,
+      onChange
     }
   }
 })

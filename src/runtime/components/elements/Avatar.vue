@@ -1,26 +1,43 @@
 <template>
   <span :class="wrapperClass">
-    <img v-if="url && !error" :class="avatarClass" :src="url" :alt="alt" :onerror="() => onError()">
-    <span v-else-if="text || placeholder" :class="ui.placeholder">{{ text || placeholder }}</span>
+    <img
+      v-if="url && !error"
+      :class="imgClass"
+      :alt="alt"
+      :src="url"
+      v-bind="attrs"
+      @error="onError"
+    >
+    <span v-else-if="text" :class="ui.text">{{ text }}</span>
+    <UIcon v-else-if="icon" :name="icon" :class="iconClass" />
+    <span v-else-if="placeholder" :class="ui.placeholder">{{ placeholder }}</span>
 
-    <span v-if="chipColor" :class="chipClass" />
+    <span v-if="chipColor" :class="chipClass">
+      {{ chipText }}
+    </span>
     <slot />
   </span>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, watch } from 'vue'
+import { defineComponent, ref, computed, toRef, watch } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { classNames } from '../../utils'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import UIcon from '../elements/Icon.vue'
+import { useUI } from '../../composables/useUI'
+import { mergeConfig } from '../../utils'
+import type { AvatarSize, AvatarChipColor, AvatarChipPosition, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { avatar } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof avatar>(appConfig.ui.strategy, appConfig.ui.avatar, avatar)
 
 export default defineComponent({
+  components: {
+    UIcon
+  },
+  inheritAttrs: false,
   props: {
     src: {
       type: [String, Boolean],
@@ -34,62 +51,50 @@ export default defineComponent({
       type: String,
       default: null
     },
-    size: {
+    icon: {
       type: String,
-      default: () => appConfig.ui.avatar.default.size,
+      default: () => config.default.icon
+    },
+    size: {
+      type: String as PropType<AvatarSize>,
+      default: () => config.default.size,
       validator (value: string) {
-        return Object.keys(appConfig.ui.avatar.size).includes(value)
+        return Object.keys(config.size).includes(value)
       }
     },
     chipColor: {
-      type: String,
-      default: () => appConfig.ui.avatar.default.chipColor,
+      type: String as PropType<AvatarChipColor>,
+      default: () => config.default.chipColor,
       validator (value: string) {
         return ['gray', ...appConfig.ui.colors].includes(value)
       }
     },
     chipPosition: {
-      type: String,
-      default: () => appConfig.ui.avatar.default.chipPosition,
+      type: String as PropType<AvatarChipPosition>,
+      default: () => config.default.chipPosition,
       validator (value: string) {
-        return Object.keys(appConfig.ui.avatar.chip.position).includes(value)
+        return Object.keys(config.chip.position).includes(value)
       }
     },
+    chipText: {
+      type: [String, Number],
+      default: null
+    },
+    imgClass: {
+      type: String,
+      default: ''
+    },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.avatar>>,
-      default: () => appConfig.ui.avatar
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   setup (props) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
-
-    const ui = computed<Partial<typeof appConfig.ui.avatar>>(() => defu({}, props.ui, appConfig.ui.avatar))
-
-    const wrapperClass = computed(() => {
-      return classNames(
-        ui.value.wrapper,
-        ui.value.background,
-        ui.value.rounded,
-        ui.value.size[props.size]
-      )
-    })
-
-    const avatarClass = computed(() => {
-      return classNames(
-        ui.value.rounded,
-        ui.value.size[props.size]
-      )
-    })
-
-    const chipClass = computed(() => {
-      return classNames(
-        ui.value.chip.base,
-        ui.value.chip.size[props.size],
-        ui.value.chip.position[props.chipPosition],
-        ui.value.chip.background.replaceAll('{color}', props.chipColor)
-      )
-    })
+    const { ui, attrs } = useUI('avatar', toRef(props, 'ui'), config)
 
     const url = computed(() => {
       if (typeof props.src === 'boolean') {
@@ -100,6 +105,38 @@ export default defineComponent({
 
     const placeholder = computed(() => {
       return (props.alt || '').split(' ').map(word => word.charAt(0)).join('').substring(0, 2)
+    })
+
+    const wrapperClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.wrapper,
+        (error.value || !url.value) && ui.value.background,
+        ui.value.rounded,
+        ui.value.size[props.size]
+      ), props.class)
+    })
+
+    const imgClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.rounded,
+        ui.value.size[props.size]
+      ), props.imgClass)
+    })
+
+    const iconClass = computed(() => {
+      return twJoin(
+        ui.value.icon.base,
+        ui.value.icon.size[props.size]
+      )
+    })
+
+    const chipClass = computed(() => {
+      return twJoin(
+        ui.value.chip.base,
+        ui.value.chip.size[props.size],
+        ui.value.chip.position[props.chipPosition],
+        ui.value.chip.background.replaceAll('{color}', props.chipColor)
+      )
     })
 
     const error = ref(false)
@@ -115,8 +152,13 @@ export default defineComponent({
     }
 
     return {
+      // eslint-disable-next-line vue/no-dupe-keys
+      ui,
+      attrs,
       wrapperClass,
-      avatarClass,
+      // eslint-disable-next-line vue/no-dupe-keys
+      imgClass,
+      iconClass,
       chipClass,
       url,
       placeholder,

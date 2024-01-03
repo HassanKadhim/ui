@@ -1,75 +1,82 @@
 <template>
-  <span :class="badgeClass">
+  <span :class="badgeClass" v-bind="attrs">
     <slot>{{ label }}</slot>
   </span>
 </template>
 
 <script lang="ts">
-import { computed, defineComponent } from 'vue'
+import { computed, toRef, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { classNames } from '../../utils'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import { useUI } from '../../composables/useUI'
+import { mergeConfig } from '../../utils'
+import { useInjectButtonGroup } from '../../composables/useButtonGroup'
+import type { BadgeColor, BadgeSize, BadgeVariant, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { badge } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof badge>(appConfig.ui.strategy, appConfig.ui.badge, badge)
 
 export default defineComponent({
+  inheritAttrs: false,
   props: {
     size: {
-      type: String,
-      default: () => appConfig.ui.badge.default.size,
+      type: String as PropType<BadgeSize>,
+      default: () => config.default.size,
       validator (value: string) {
-        return Object.keys(appConfig.ui.badge.size).includes(value)
+        return Object.keys(config.size).includes(value)
       }
     },
     color: {
-      type: String,
-      default: () => appConfig.ui.badge.default.color,
+      type: String as PropType<BadgeColor>,
+      default: () => config.default.color,
       validator (value: string) {
-        return [...appConfig.ui.colors, ...Object.keys(appConfig.ui.badge.color)].includes(value)
+        return [...appConfig.ui.colors, ...Object.keys(config.color)].includes(value)
       }
     },
     variant: {
-      type: String,
-      default: () => appConfig.ui.badge.default.variant,
+      type: String as PropType<BadgeVariant>,
+      default: () => config.default.variant,
       validator (value: string) {
         return [
-          ...Object.keys(appConfig.ui.badge.variant),
-          ...Object.values(appConfig.ui.badge.color).flatMap(value => Object.keys(value))
+          ...Object.keys(config.variant),
+          ...Object.values(config.color).flatMap(value => Object.keys(value))
         ].includes(value)
       }
     },
     label: {
-      type: String,
+      type: [String, Number],
       default: null
     },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.badge>>,
-      default: () => appConfig.ui.badge
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   setup (props) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
+    const { ui, attrs } = useUI('badge', toRef(props, 'ui'), config)
 
-    const ui = computed<Partial<typeof appConfig.ui.badge>>(() => defu({}, props.ui, appConfig.ui.badge))
+    const { size, rounded } = useInjectButtonGroup({ ui, props })
 
     const badgeClass = computed(() => {
       const variant = ui.value.color?.[props.color as string]?.[props.variant as string] || ui.value.variant[props.variant]
 
-      return classNames(
+      return twMerge(twJoin(
         ui.value.base,
         ui.value.font,
-        ui.value.rounded,
-        ui.value.size[props.size],
+        rounded.value,
+        ui.value.size[size.value],
         variant?.replaceAll('{color}', props.color)
-      )
+      ), props.class)
     })
 
     return {
+      attrs,
       badgeClass
     }
   }

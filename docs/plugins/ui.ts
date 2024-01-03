@@ -1,4 +1,4 @@
-import { hexToRgb } from "../../src/runtime/utils"
+import { hexToRgb } from '../../src/runtime/utils'
 import colors from '#tailwind-config/theme/colors'
 
 export default defineNuxtPlugin({
@@ -12,8 +12,15 @@ export default defineNuxtPlugin({
 
       return `:root {
         ${Object.entries(primary || colors.green).map(([key, value]) => `--color-primary-${key}: ${hexToRgb(value)};`).join('\n')}
+        --color-primary-DEFAULT: var(--color-primary-500);
+
         ${Object.entries(gray || colors.cool).map(([key, value]) => `--color-gray-${key}: ${hexToRgb(value)};`).join('\n')}
-        }`
+        }
+
+        .dark {
+          --color-primary-DEFAULT: var(--color-primary-400);
+        }
+        `
     })
 
     if (process.client) {

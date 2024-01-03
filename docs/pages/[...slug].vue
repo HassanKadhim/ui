@@ -1,53 +1,107 @@
 <template>
-  <div v-if="page" class="grid lg:grid-cols-10 lg:gap-8">
-    <div class="pt-8 pb-16" :class="page.body?.toc ? 'lg:col-span-8' : 'lg:col-span-10'">
-      <DocsPageHeader :page="page" />
+  <UPage>
+    <UPageHeader :title="page.title" :description="page.description" :links="page.links" :headline="headline" />
 
-      <ContentRenderer v-if="page.body" :value="page" class="prose prose-primary dark:prose-invert max-w-none" />
+    <UPageBody prose>
+      <ContentRenderer v-if="page.body" :value="page" />
 
-      <DocsPageFooter :page="page" class="mt-12" />
+      <hr v-if="surround?.length">
 
-      <hr class="border-gray-200 dark:border-gray-800 my-6">
+      <UDocsSurround :surround="surround" />
+    </UPageBody>
 
-      <DocsPrevNext :prev="prev" :next="next" />
+    <template v-if="page?.body?.toc?.links?.length" #right>
+      <UDocsToc :links="page.body.toc.links">
+        <template #bottom>
+          <div class="hidden lg:block space-y-6 !mt-6">
+            <UDivider v-if="page.body?.toc?.links?.length" type="dashed" />
 
-      <DocsFooter class="mt-16" />
-    </div>
+            <UPageLinks title="Community" :links="links" />
 
-    <DocsToc v-if="page.body?.toc" :toc="page.body.toc" class="lg:col-span-2" />
-  </div>
-  <div v-else class="flex-1 flex flex-col items-center justify-center">
-    <div class="text-center">
-      <p class="text-base font-semibold text-primary-500 dark:text-primary-400">
-        404
-      </p>
-      <h1 class="mt-2 text-4xl tracking-tight font-extrabold u-text-gray-900 sm:text-5xl">
-        Page not found
-      </h1>
-      <p class="mt-2 text-base u-text-gray-500">
-        Sorry, we couldn’t find the page you’re looking for.
-      </p>
-      <div class="mt-6">
-        <NuxtLink to="/" class="text-base font-medium text-primary-500 dark:text-primary-400 hover:u-text-gray-900">
-          Go back home
-          <span aria-hidden="true"> &rarr;</span>
-        </NuxtLink>
-      </div>
-    </div>
-  </div>
+            <UDivider type="dashed" />
+
+            <div class="space-y-3">
+              <AdsPro />
+              <AdsCarbon />
+            </div>
+          </div>
+        </template>
+      </UDocsToc>
+    </template>
+  </UPage>
 </template>
 
 <script setup lang="ts">
+import { withoutTrailingSlash } from 'ufo'
+
 const route = useRoute()
+const { branch } = useContentSource()
 
-const { data: page } = await useAsyncData(`docs-${route.path}`, () => queryContent(route.path).findOne())
-const { data: surround } = await useAsyncData(`docs-${route.path}-surround`, () => queryContent()
-  .only(['_path', 'title', 'navigation', 'description'])
-  .where({ _extension: 'md', navigation: { $ne: false } })
-  .findSurround(route.path.endsWith('/') ? route.path.slice(0, -1) : route.path)
-)
+definePageMeta({
+  layout: 'docs'
+})
 
-const [prev, next] = surround.value
+const { data: page } = await useAsyncData(route.path, () => queryContent(route.path).findOne())
+if (!page.value) {
+  throw createError({ statusCode: 404, statusMessage: 'Page not found', fatal: true })
+}
 
-useContentHead(page)
+const { data: surround } = await useAsyncData(`${route.path}-surround`, () => {
+  return queryContent()
+    .where({
+      _extension: 'md',
+      _path: {
+        [branch.value?.name === 'dev' ? '$eq' : '$ne']: new RegExp('^/dev')
+      },
+      navigation: {
+        $ne: false
+      }
+    })
+    .only(['title', 'description', '_path'])
+    .findSurround(withoutTrailingSlash(route.path))
+})
+
+const headline = computed(() => findPageHeadline(page.value))
+
+useSeoMeta({
+  titleTemplate: '%s - Nuxt UI',
+  title: page.value.title,
+  ogTitle: `${page.value.title} - Nuxt UI`,
+  description: page.value.description,
+  ogDescription: page.value.description
+})
+
+defineOgImage({
+  component: 'Docs',
+  title: page.value.title,
+  description: page.value.description,
+  headline: headline.value
+})
+
+const links = computed(() => [{
+  icon: 'i-heroicons-pencil-square',
+  label: 'Edit this page',
+  to: `https://github.com/nuxt/ui/edit/dev/docs/content/${branch.value?.name === 'dev' ? page?.value?._file.split('/').slice(1).join('/') : page?.value?._file}`,
+  target: '_blank'
+}, {
+  icon: 'i-heroicons-star',
+  label: 'Star on GitHub',
+  to: 'https://github.com/nuxt/ui',
+  target: '_blank'
+}, {
+  icon: 'i-heroicons-chat-bubble-bottom-center-text',
+  label: 'Chat on Discord',
+  to: 'https://discord.com/channels/473401852243869706/1153996761426300948',
+  target: '_blank'
+}, {
+  icon: 'i-heroicons-book-open',
+  label: 'Nuxt docs',
+  to: 'https://nuxt.com',
+  target: '_blank'
+}, {
+  icon: 'i-simple-icons-figma',
+  label: 'Figma Kit',
+  to: 'https://www.figma.com/community/file/1288455405058138934/nuxt-ui',
+  target: '_blank'
+}])
 </script>

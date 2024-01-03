@@ -1,56 +1,76 @@
 <template>
-  <div :class="[ui.wrapper, ui.position, ui.width]">
-    <div v-if="notifications.length" :class="ui.container">
-      <div v-for="notification of notifications" :key="notification.id">
-        <UNotification
-          v-bind="notification"
-          :class="notification.click && 'cursor-pointer'"
-          @click="notification.click && notification.click(notification)"
-          @close="toast.remove(notification.id)"
-        />
+  <Teleport to="body">
+    <div :class="wrapperClass" role="region" v-bind="attrs">
+      <div v-if="notifications.length" :class="ui.container">
+        <div v-for="notification of notifications" :key="notification.id">
+          <UNotification
+            v-bind="notification"
+            :class="notification.click && 'cursor-pointer'"
+            @click="notification.click && notification.click(notification)"
+            @close="toast.remove(notification.id)"
+          >
+            <template v-for="(_, name) in $slots" #[name]="slotData">
+              <slot :name="name" v-bind="slotData" />
+            </template>
+          </UNotification>
+        </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <script lang="ts">
-import { computed, defineComponent } from 'vue'
+import { computed, toRef, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import type { Notification } from '../../types'
-import { useToast } from '../../composables/useToast'
+import { twMerge, twJoin } from 'tailwind-merge'
 import UNotification from './Notification.vue'
-import { useState, useAppConfig } from '#imports'
-// TODO: Remove
+import { useUI } from '../../composables/useUI'
+import { useToast } from '../../composables/useToast'
+import { mergeConfig } from '../../utils'
+import type { Notification, Strategy } from '../../types'
+import { useState } from '#imports'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { notifications } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof notifications>(appConfig.ui.strategy, appConfig.ui.notifications, notifications)
 
 export default defineComponent({
   components: {
     UNotification
   },
+  inheritAttrs: false,
   props: {
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.notifications>>,
-      default: () => appConfig.ui.notifications
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   setup (props) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
-
-    const ui = computed<Partial<typeof appConfig.ui.notifications>>(() => defu({}, props.ui, appConfig.ui.notifications))
+    const { ui, attrs } = useUI('notifications', toRef(props, 'ui'), config)
 
     const toast = useToast()
     const notifications = useState<Notification[]>('notifications', () => [])
 
+    const wrapperClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.wrapper,
+        ui.value.position,
+        ui.value.width
+      ), props.class)
+    })
+
     return {
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
+      attrs,
       toast,
-      notifications
+      notifications,
+      wrapperClass
     }
   }
 })

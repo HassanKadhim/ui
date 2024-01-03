@@ -1,6 +1,6 @@
 <template>
   <component
-    :is="searchable ? 'Combobox' : 'Listbox'"
+    :is="searchable ? 'HCombobox' : 'HListbox'"
     v-slot="{ open }"
     :by="by"
     :name="name"
@@ -15,20 +15,20 @@
       v-if="required"
       :value="modelValue"
       :required="required"
-      class="absolute inset-0 w-px opacity-0 cursor-default"
+      :class="uiMenu.required"
       tabindex="-1"
       aria-hidden="true"
     >
 
     <component
-      :is="searchable ? 'ComboboxButton' : 'ListboxButton'"
+      :is="searchable ? 'HComboboxButton' : 'HListboxButton'"
       ref="trigger"
       as="div"
       role="button"
-      class="inline-flex w-full"
+      :class="uiMenu.trigger"
     >
       <slot :open="open" :disabled="disabled" :loading="loading">
-        <button :class="selectMenuClass" :disabled="disabled || loading" type="button" v-bind="$attrs">
+        <button :id="inputId" :class="selectClass" :disabled="disabled || loading" type="button" v-bind="attrs">
           <span v-if="(isLeading && leadingIconName) || $slots.leading" :class="leadingWrapperIconClass">
             <slot name="leading" :disabled="disabled" :loading="loading">
               <UIcon :name="leadingIconName" :class="leadingIconClass" />
@@ -36,9 +36,9 @@
           </span>
 
           <slot name="label">
-            <span v-if="multiple && Array.isArray(modelValue) && modelValue.length" class="block truncate">{{ modelValue.length }} selected</span>
-            <span v-else-if="!multiple && modelValue" class="block truncate">{{ typeof modelValue === 'string' ? modelValue : modelValue[optionAttribute] }}</span>
-            <span v-else class="block truncate" :class="ui.placeholder">{{ placeholder || '&nbsp;' }}</span>
+            <span v-if="multiple && Array.isArray(modelValue) && modelValue.length" :class="uiMenu.label">{{ modelValue.length }} selected</span>
+            <span v-else-if="!multiple && modelValue" :class="uiMenu.label">{{ ['string', 'number'].includes(typeof modelValue) ? modelValue : modelValue[optionAttribute] }}</span>
+            <span v-else :class="uiMenu.label">{{ placeholder || '&nbsp;' }}</span>
           </slot>
 
           <span v-if="(isTrailing && trailingIconName) || $slots.trailing" :class="trailingWrapperIconClass">
@@ -50,99 +50,123 @@
       </slot>
     </component>
 
-    <div v-if="open" ref="container" :class="[ui.container, ui.width]">
-      <transition v-bind="ui.transition">
-        <component :is="searchable ? 'ComboboxOptions' : 'ListboxOptions'" static :class="[ui.base, ui.divide, ui.ring, ui.rounded, ui.shadow, ui.background, ui.padding, ui.height]">
-          <ComboboxInput
-            v-if="searchable"
-            ref="searchInput"
-            :display-value="() => query"
-            name="q"
-            :placeholder="searchablePlaceholder"
-            autofocus
-            autocomplete="off"
-            :class="ui.input"
-            @change="query = $event.target.value"
-          />
-          <component
-            :is="searchable ? 'ComboboxOption' : 'ListboxOption'"
-            v-for="(option, index) in filteredOptions"
-            v-slot="{ active, selected, disabled: optionDisabled }"
-            :key="index"
-            as="template"
-            :value="option"
-            :disabled="option.disabled"
-          >
-            <li :class="[ui.option.base, ui.option.rounded, ui.option.padding, ui.option.size, ui.option.color, active ? ui.option.active : ui.option.inactive, selected && ui.option.selected, optionDisabled && ui.option.disabled]">
-              <div :class="ui.option.container">
-                <slot name="option" :option="option" :active="active" :selected="selected">
-                  <UIcon v-if="option.icon" :name="option.icon" :class="[ui.option.icon.base, active ? ui.option.icon.active : ui.option.icon.inactive, option.iconClass]" aria-hidden="true" />
-                  <UAvatar
-                    v-else-if="option.avatar"
-                    v-bind="{ size: ui.option.avatar.size, ...option.avatar }"
-                    :class="ui.option.avatar.base"
-                    aria-hidden="true"
-                  />
-                  <span v-else-if="option.chip" :class="ui.option.chip.base" :style="{ background: `#${option.chip}` }" />
+    <div v-if="open" ref="container" :class="[uiMenu.container, uiMenu.width]">
+      <Transition appear v-bind="uiMenu.transition">
+        <div>
+          <div v-if="popper.arrow" data-popper-arrow :class="Object.values(uiMenu.arrow)" />
 
-                  <span class="truncate">{{ typeof option === 'string' ? option : option[optionAttribute] }}</span>
-                </slot>
-              </div>
+          <component :is="searchable ? 'HComboboxOptions' : 'HListboxOptions'" static :class="[uiMenu.base, uiMenu.ring, uiMenu.rounded, uiMenu.shadow, uiMenu.background, uiMenu.padding, uiMenu.height]">
+            <HComboboxInput
+              v-if="searchable"
+              :display-value="() => query"
+              name="q"
+              :placeholder="searchablePlaceholder"
+              autofocus
+              autocomplete="off"
+              :class="uiMenu.input"
+              @change="onChange"
+            />
+            <component
+              :is="searchable ? 'HComboboxOption' : 'HListboxOption'"
+              v-for="(option, index) in filteredOptions"
+              v-slot="{ active, selected, disabled: optionDisabled }"
+              :key="index"
+              as="template"
+              :value="valueAttribute ? option[valueAttribute] : option"
+              :disabled="option.disabled"
+            >
+              <li :class="[uiMenu.option.base, uiMenu.option.rounded, uiMenu.option.padding, uiMenu.option.size, uiMenu.option.color, active ? uiMenu.option.active : uiMenu.option.inactive, selected && uiMenu.option.selected, optionDisabled && uiMenu.option.disabled]">
+                <div :class="uiMenu.option.container">
+                  <slot name="option" :option="option" :active="active" :selected="selected">
+                    <UIcon v-if="option.icon" :name="option.icon" :class="[uiMenu.option.icon.base, active ? uiMenu.option.icon.active : uiMenu.option.icon.inactive, option.iconClass]" aria-hidden="true" />
+                    <UAvatar
+                      v-else-if="option.avatar"
+                      v-bind="{ size: uiMenu.option.avatar.size, ...option.avatar }"
+                      :class="uiMenu.option.avatar.base"
+                      aria-hidden="true"
+                    />
+                    <span v-else-if="option.chip" :class="uiMenu.option.chip.base" :style="{ background: `#${option.chip}` }" />
 
-              <span v-if="selected" :class="[ui.option.selectedIcon.wrapper, ui.option.selectedIcon.padding]">
-                <UIcon :name="selectedIcon" :class="ui.option.selectedIcon.base" aria-hidden="true" />
-              </span>
-            </li>
+                    <span class="truncate">{{ ['string', 'number'].includes(typeof option) ? option : option[optionAttribute] }}</span>
+                  </slot>
+                </div>
+
+                <span v-if="selected" :class="[uiMenu.option.selectedIcon.wrapper, uiMenu.option.selectedIcon.padding]">
+                  <UIcon :name="selectedIcon" :class="uiMenu.option.selectedIcon.base" aria-hidden="true" />
+                </span>
+              </li>
+            </component>
+
+            <component :is="searchable ? 'HComboboxOption' : 'HListboxOption'" v-if="creatable && createOption" v-slot="{ active, selected }" :value="createOption" as="template">
+              <li :class="[uiMenu.option.base, uiMenu.option.rounded, uiMenu.option.padding, uiMenu.option.size, uiMenu.option.color, active ? uiMenu.option.active : uiMenu.option.inactive]">
+                <div :class="uiMenu.option.container">
+                  <slot name="option-create" :option="createOption" :active="active" :selected="selected">
+                    <span :class="uiMenu.option.create">Create "{{ createOption[optionAttribute] }}"</span>
+                  </slot>
+                </div>
+              </li>
+            </component>
+            <p v-else-if="searchable && query && !filteredOptions.length" :class="uiMenu.option.empty">
+              <slot name="option-empty" :query="query">
+                No results for "{{ query }}".
+              </slot>
+            </p>
+            <p v-else-if="!filteredOptions.length" :class="uiMenu.empty">
+              <slot name="empty" :query="query">
+                No options.
+              </slot>
+            </p>
           </component>
-
-          <component :is="searchable ? 'ComboboxOption' : 'ListboxOption'" v-if="creatable && queryOption && !filteredOptions.length" v-slot="{ active, selected }" :value="queryOption" as="template">
-            <li :class="[ui.option.base, ui.option.rounded, ui.option.padding, ui.option.size, ui.option.color, active ? ui.option.active : ui.option.inactive]">
-              <div :class="ui.option.container">
-                <slot name="option-create" :option="queryOption" :active="active" :selected="selected">
-                  <span class="block truncate">Create "{{ queryOption[optionAttribute] }}"</span>
-                </slot>
-              </div>
-            </li>
-          </component>
-          <p v-else-if="searchable && query && !filteredOptions.length" :class="ui.option.empty">
-            <slot name="option-empty" :query="query">
-              No results for "{{ query }}".
-            </slot>
-          </p>
-        </component>
-      </transition>
+        </div>
+      </Transition>
     </div>
   </component>
 </template>
 
 <script lang="ts">
-import { ref, computed, watch, defineComponent } from 'vue'
-import type { PropType, ComponentPublicInstance } from 'vue'
+import { ref, computed, toRef, watch, defineComponent } from 'vue'
+import type { PropType } from 'vue'
+import {
+  Combobox as HCombobox,
+  ComboboxButton as HComboboxButton,
+  ComboboxOptions as HComboboxOptions,
+  ComboboxOption as HComboboxOption,
+  ComboboxInput as HComboboxInput,
+  Listbox as HListbox,
+  ListboxButton as HListboxButton,
+  ListboxOptions as HListboxOptions,
+  ListboxOption as HListboxOption
+} from '@headlessui/vue'
+import { computedAsync, useDebounceFn } from '@vueuse/core'
 import { defu } from 'defu'
-import { Combobox, ComboboxButton, ComboboxOptions, ComboboxOption, ComboboxInput, Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headlessui/vue'
+import { twMerge, twJoin } from 'tailwind-merge'
 import UIcon from '../elements/Icon.vue'
 import UAvatar from '../elements/Avatar.vue'
-import { classNames } from '../../utils'
+import { useUI } from '../../composables/useUI'
 import { usePopper } from '../../composables/usePopper'
-import type { PopperOptions } from '../../types'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { useFormGroup } from '../../composables/useFormGroup'
+import { get, mergeConfig } from '../../utils'
+import { useInjectButtonGroup } from '../../composables/useButtonGroup'
+import type { SelectSize, SelectColor, SelectVariant, PopperOptions, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { select, selectMenu } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof select>(appConfig.ui.strategy, appConfig.ui.select, select)
+
+const configMenu = mergeConfig<typeof selectMenu>(appConfig.ui.strategy, appConfig.ui.selectMenu, selectMenu)
 
 export default defineComponent({
   components: {
-    Combobox,
-    ComboboxButton,
-    ComboboxOptions,
-    ComboboxOption,
-    ComboboxInput,
-    Listbox,
-    ListboxButton,
-    ListboxOptions,
-    ListboxOption,
+    HCombobox,
+    HComboboxButton,
+    HComboboxOptions,
+    HComboboxOption,
+    HComboboxInput,
+    HListbox,
+    HListboxButton,
+    HListboxOptions,
+    HListboxOption,
     UIcon,
     UAvatar
   },
@@ -152,6 +176,10 @@ export default defineComponent({
       type: [String, Number, Object, Array],
       default: ''
     },
+    query: {
+      type: String,
+      default: null
+    },
     by: {
       type: String,
       default: undefined
@@ -159,6 +187,10 @@ export default defineComponent({
     options: {
       type: Array as PropType<{ [key: string]: any, disabled?: boolean }[] | string[]>,
       default: () => []
+    },
+    id: {
+      type: String,
+      default: null
     },
     name: {
       type: String,
@@ -174,7 +206,7 @@ export default defineComponent({
     },
     loadingIcon: {
       type: String,
-      default: () => appConfig.ui.input.default.loadingIcon
+      default: () => config.default.loadingIcon
     },
     leadingIcon: {
       type: String,
@@ -182,7 +214,7 @@ export default defineComponent({
     },
     trailingIcon: {
       type: String,
-      default: () => appConfig.ui.select.default.trailingIcon
+      default: () => config.default.trailingIcon
     },
     trailing: {
       type: Boolean,
@@ -198,7 +230,7 @@ export default defineComponent({
     },
     selectedIcon: {
       type: String,
-      default: () => appConfig.ui.selectMenu.default.selectedIcon
+      default: () => configMenu.default.selectedIcon
     },
     disabled: {
       type: Boolean,
@@ -209,16 +241,28 @@ export default defineComponent({
       default: false
     },
     searchable: {
-      type: Boolean,
+      type: [Boolean, Function] as PropType<boolean | ((query: string) => Promise<any[]> | any[])>,
       default: false
     },
     searchablePlaceholder: {
       type: String,
       default: 'Search...'
     },
+    clearSearchOnClose: {
+      type: Boolean,
+      default: () => configMenu.default.clearSearchOnClose
+    },
+    debounce: {
+      type: Number,
+      default: 200
+    },
     creatable: {
       type: Boolean,
       default: false
+    },
+    showCreateOptionWhen: {
+      type: String as PropType<'always' | 'empty'>,
+      default: () => configMenu.default.showCreateOptionWhen
     },
     placeholder: {
       type: String,
@@ -229,32 +273,36 @@ export default defineComponent({
       default: true
     },
     size: {
-      type: String,
-      default: () => appConfig.ui.select.default.size,
+      type: String as PropType<SelectSize>,
+      default: null,
       validator (value: string) {
-        return Object.keys(appConfig.ui.select.size).includes(value)
+        return Object.keys(config.size).includes(value)
       }
     },
     color: {
-      type: String,
-      default: () => appConfig.ui.select.default.color,
+      type: String as PropType<SelectColor>,
+      default: () => config.default.color,
       validator (value: string) {
-        return [...appConfig.ui.colors, ...Object.keys(appConfig.ui.select.color)].includes(value)
+        return [...appConfig.ui.colors, ...Object.keys(config.color)].includes(value)
       }
     },
     variant: {
-      type: String,
-      default: () => appConfig.ui.select.default.variant,
+      type: String as PropType<SelectVariant>,
+      default: () => config.default.variant,
       validator (value: string) {
         return [
-          ...Object.keys(appConfig.ui.select.variant),
-          ...Object.values(appConfig.ui.select.color).flatMap(value => Object.keys(value))
+          ...Object.keys(config.variant),
+          ...Object.values(config.color).flatMap(value => Object.keys(value))
         ].includes(value)
       }
     },
     optionAttribute: {
       type: String,
       default: 'label'
+    },
+    valueAttribute: {
+      type: String,
+      default: null
     },
     searchAttributes: {
       type: Array,
@@ -264,45 +312,63 @@ export default defineComponent({
       type: Object as PropType<PopperOptions>,
       default: () => ({})
     },
-    ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.selectMenu>>,
-      default: () => appConfig.ui.selectMenu
+    selectClass: {
+      type: String,
+      default: null
     },
-    uiSelect: {
-      type: Object as PropType<Partial<typeof appConfig.ui.select>>,
-      default: () => appConfig.ui.select
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
+    ui: {
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
+    },
+    uiMenu: {
+      type: Object as PropType<Partial<typeof configMenu> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
-  emits: ['update:modelValue', 'open', 'close'],
+  emits: ['update:modelValue', 'update:query', 'open', 'close', 'change'],
   setup (props, { emit, slots }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
+    const { ui, attrs } = useUI('select', toRef(props, 'ui'), config, toRef(props, 'class'))
 
-    const ui = computed<Partial<typeof appConfig.ui.selectMenu>>(() => defu({}, props.ui, appConfig.ui.selectMenu))
-    const uiSelect = computed<Partial<typeof appConfig.ui.select>>(() => defu({}, props.uiSelect, appConfig.ui.select))
+    const { ui: uiMenu } = useUI('selectMenu', toRef(props, 'uiMenu'), configMenu)
 
-    const popper = computed<PopperOptions>(() => defu({}, props.popper, ui.value.popper as PopperOptions))
+    const popper = computed<PopperOptions>(() => defu({}, props.popper, uiMenu.value.popper as PopperOptions))
 
     const [trigger, container] = usePopper(popper.value)
 
-    const query = ref('')
-    const searchInput = ref<ComponentPublicInstance<HTMLElement>>()
+    const { size: sizeButtonGroup, rounded } = useInjectButtonGroup({ ui, props })
+    const { emitFormBlur, emitFormChange, inputId, color, size: sizeFormGroup, name } = useFormGroup(props, config)
 
-    const selectMenuClass = computed(() => {
-      const variant = uiSelect.value.color?.[props.color as string]?.[props.variant as string] || uiSelect.value.variant[props.variant]
+    const size = computed(() => sizeButtonGroup.value || sizeFormGroup.value)
 
-      return classNames(
-        uiSelect.value.base,
-        uiSelect.value.rounded,
-        'text-left cursor-default',
-        uiSelect.value.size[props.size],
-        uiSelect.value.gap[props.size],
-        props.padded ? uiSelect.value.padding[props.size] : 'p-0',
-        variant?.replaceAll('{color}', props.color),
-        (isLeading.value || slots.leading) && uiSelect.value.leading.padding[props.size],
-        (isTrailing.value || slots.trailing) && uiSelect.value.trailing.padding[props.size],
-        'inline-flex items-center'
-      )
+    const internalQuery = ref('')
+    const query = computed({
+      get () {
+        return props.query ?? internalQuery.value
+      },
+      set (value) {
+        internalQuery.value = value
+        emit('update:query', value)
+      }
+    })
+
+    const selectClass = computed(() => {
+      const variant = ui.value.color?.[color.value as string]?.[props.variant as string] || ui.value.variant[props.variant]
+
+      return twMerge(twJoin(
+        ui.value.base,
+        uiMenu.value.select,
+        rounded.value,
+        ui.value.size[size.value],
+        ui.value.gap[size.value],
+        props.padded ? ui.value.padding[size.value] : 'p-0',
+        variant?.replaceAll('{color}', color.value),
+        (isLeading.value || slots.leading) && ui.value.leading.padding[size.value],
+        (isTrailing.value || slots.trailing) && ui.value.trailing.padding[size.value]
+      ), props.selectClass)
     })
 
     const isLeading = computed(() => {
@@ -330,78 +396,123 @@ export default defineComponent({
     })
 
     const leadingWrapperIconClass = computed(() => {
-      return classNames(
-        uiSelect.value.icon.leading.wrapper,
-        uiSelect.value.icon.leading.pointer,
-        uiSelect.value.icon.leading.padding[props.size]
+      return twJoin(
+        ui.value.icon.leading.wrapper,
+        ui.value.icon.leading.pointer,
+        ui.value.icon.leading.padding[size.value]
       )
     })
 
     const leadingIconClass = computed(() => {
-      return classNames(
-        uiSelect.value.icon.base,
-        appConfig.ui.colors.includes(props.color) && uiSelect.value.icon.color.replaceAll('{color}', props.color),
-        uiSelect.value.icon.size[props.size],
-        props.loading && 'animate-spin'
+      return twJoin(
+        ui.value.icon.base,
+        color.value && appConfig.ui.colors.includes(color.value) && ui.value.icon.color.replaceAll('{color}', color.value),
+        ui.value.icon.size[size.value],
+        props.loading && ui.value.icon.loading
       )
     })
 
     const trailingWrapperIconClass = computed(() => {
-      return classNames(
-        uiSelect.value.icon.trailing.wrapper,
-        uiSelect.value.icon.trailing.pointer,
-        uiSelect.value.icon.trailing.padding[props.size]
+      return twJoin(
+        ui.value.icon.trailing.wrapper,
+        ui.value.icon.trailing.pointer,
+        ui.value.icon.trailing.padding[size.value]
       )
     })
 
     const trailingIconClass = computed(() => {
-      return classNames(
-        uiSelect.value.icon.base,
-        appConfig.ui.colors.includes(props.color) && uiSelect.value.icon.color.replaceAll('{color}', props.color),
-        uiSelect.value.icon.size[props.size],
-        props.loading && !isLeading.value && 'animate-spin'
+      return twJoin(
+        ui.value.icon.base,
+        color.value && appConfig.ui.colors.includes(color.value) && ui.value.icon.color.replaceAll('{color}', color.value),
+        ui.value.icon.size[size.value],
+        props.loading && !isLeading.value && ui.value.icon.loading
       )
     })
 
-    const filteredOptions = computed(() =>
-      query.value === ''
-        ? props.options
-        : (props.options as any[]).filter((option: any) => {
-            return (props.searchAttributes?.length ? props.searchAttributes : [props.optionAttribute]).some((searchAttribute: any) => {
-              return typeof option === 'string' ? option.search(new RegExp(query.value, 'i')) !== -1 : (option[searchAttribute] && option[searchAttribute].search(new RegExp(query.value, 'i')) !== -1)
-            })
-          })
-    )
+    const debouncedSearch = typeof props.searchable === 'function' ? useDebounceFn(props.searchable, props.debounce) : undefined
 
-    const queryOption = computed(() => {
-      return query.value === '' ? null : { [props.optionAttribute]: query.value }
+    const filteredOptions = computedAsync(async () => {
+      if (props.searchable && debouncedSearch) {
+        return await debouncedSearch(query.value)
+      }
+
+      if (query.value === '') {
+        return props.options
+      }
+
+      return (props.options as any[]).filter((option: any) => {
+        return (props.searchAttributes?.length ? props.searchAttributes : [props.optionAttribute]).some((searchAttribute: any) => {
+          if (['string', 'number'].includes(typeof option)) {
+            return String(option).search(new RegExp(query.value, 'i')) !== -1
+          }
+
+          const child = get(option, searchAttribute)
+
+          return child !== null && child !== undefined && String(child).search(new RegExp(query.value, 'i')) !== -1
+        })
+      })
     })
+
+    const createOption = computed(() => {
+      if (query.value === '') {
+        return null
+      }
+      if (props.showCreateOptionWhen === 'empty' && filteredOptions.value.length) {
+        return null
+      }
+      if (props.showCreateOptionWhen === 'always') {
+        const existingOption = filteredOptions.value.find(option => ['string', 'number'].includes(typeof option) ? option === query.value : option[props.optionAttribute] === query.value)
+        if (existingOption) {
+          return null
+        }
+      }
+
+      return ['string', 'number'].includes(typeof props.modelValue) ? query.value : { [props.optionAttribute]: query.value }
+    })
+
+    function clearOnClose () {
+      if (props.clearSearchOnClose) {
+        query.value = ''
+      }
+    }
 
     watch(container, (value) => {
       if (value) {
         emit('open')
       } else {
+        clearOnClose()
         emit('close')
+        emitFormBlur()
       }
     })
 
     function onUpdate (event: any) {
-      if (query.value && searchInput.value?.$el) {
-        query.value = ''
-        // explicitly set input text because `ComboboxInput` `displayValue` is not reactive
-        searchInput.value.$el.value = ''
-      }
       emit('update:modelValue', event)
+      emit('change', event)
+      emitFormChange()
+    }
+
+    function onChange (event: any) {
+      query.value = event.target.value
     }
 
     return {
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
+      // eslint-disable-next-line vue/no-dupe-keys
+      uiMenu,
+      attrs,
+      // eslint-disable-next-line vue/no-dupe-keys
+      name,
+      inputId,
+      // eslint-disable-next-line vue/no-dupe-keys
+      popper,
       trigger,
       container,
       isLeading,
       isTrailing,
-      selectMenuClass,
+      // eslint-disable-next-line vue/no-dupe-keys
+      selectClass,
       leadingIconName,
       leadingIconClass,
       leadingWrapperIconClass,
@@ -409,9 +520,11 @@ export default defineComponent({
       trailingIconClass,
       trailingWrapperIconClass,
       filteredOptions,
-      queryOption,
+      createOption,
+      // eslint-disable-next-line vue/no-dupe-keys
       query,
-      onUpdate
+      onUpdate,
+      onChange
     }
   }
 })

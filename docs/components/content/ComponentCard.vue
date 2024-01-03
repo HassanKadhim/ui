@@ -2,22 +2,23 @@
   <div>
     <div v-if="propsToSelect.length" class="relative flex border border-gray-200 dark:border-gray-700 rounded-t-md overflow-hidden not-prose">
       <div v-for="prop in propsToSelect" :key="prop.name" class="flex flex-col gap-0.5 justify-between py-1.5 font-medium bg-gray-50 dark:bg-gray-800 border-r border-r-gray-200 dark:border-r-gray-700">
-        <label :for="`prop-${prop.name}`" class="block text-xs px-3 font-medium text-gray-400 dark:text-gray-500 -my-px">{{ prop.label }}</label>
+        <label :for="`prop-${prop.name}`" class="block text-xs px-2.5 font-medium text-gray-400 dark:text-gray-500 -my-px">{{ prop.label }}</label>
         <UCheckbox
-          v-if="prop.type === 'boolean'"
+          v-if="prop.type.startsWith('boolean')"
           v-model="componentProps[prop.name]"
           :name="`prop-${prop.name}`"
           tabindex="-1"
-          :ui="{ wrapper: 'relative flex items-start justify-center' }"
+          class="justify-center"
         />
         <USelectMenu
-          v-else-if="prop.type === 'string' && prop.options.length"
+          v-else-if="prop.options.length && prop.name !== 'label'"
           v-model="componentProps[prop.name]"
           :options="prop.options"
           :name="`prop-${prop.name}`"
           variant="none"
-          :ui="{ width: 'w-32 !-mt-px', rounded: 'rounded-b-md', wrapper: 'relative inline-flex' }"
-          class="!py-0"
+          class="inline-flex"
+          :ui-menu="{ width: 'w-32 !-mt-px', rounded: 'rounded-t-none' }"
+          select-class="py-0"
           tabindex="-1"
           :popper="{ strategy: 'fixed', placement: 'bottom-start' }"
         />
@@ -28,32 +29,33 @@
           :name="`prop-${prop.name}`"
           variant="none"
           autocomplete="off"
-          class="!py-0"
+          input-class="py-0"
           tabindex="-1"
           @update:model-value="val => componentProps[prop.name] = prop.type === 'number' ? Number(val) : val"
         />
       </div>
     </div>
 
-    <div class="flex border border-b-0 border-gray-200 dark:border-gray-700 relative not-prose" :class="[{ 'p-4': padding }, propsToSelect.length ? 'border-t-0' : 'rounded-t-md', backgroundClass, overflowClass]">
-      <component :is="name" v-model="vModel" v-bind="fullProps">
+    <div class="flex border border-b-0 border-gray-200 dark:border-gray-700 relative not-prose" :class="[{ 'p-4': padding }, propsToSelect.length ? 'border-t-0' : 'rounded-t-md', backgroundClass, extraClass]">
+      <component :is="name" v-model="vModel" v-bind="fullProps" :class="componentClass">
         <ContentSlot v-if="$slots.default" :use="$slots.default" />
 
         <template v-for="slot in Object.keys(slots || {})" :key="slot" #[slot]>
-          <ClientOnly>
-            <ContentSlot v-if="$slots[slot]" :use="$slots[slot]" />
-          </ClientOnly>
+          <ContentSlot :name="slot" unwrap="p" />
         </template>
       </component>
     </div>
 
-    <ContentRenderer :value="ast" class="[&>div>pre]:!rounded-t-none" />
+    <ContentRenderer v-if="!previewOnly" :value="ast" class="[&>div>pre]:!rounded-t-none [&>div>pre]:!mt-0" />
   </div>
 </template>
 
 <script setup lang="ts">
 // @ts-expect-error
 import { transformContent } from '@nuxt/content/transformers'
+// @ts-ignore
+import { useShikiHighlighter } from '@nuxtjs/mdc/runtime'
+import { upperFirst, camelCase, kebabCase } from 'scule'
 
 // eslint-disable-next-line vue/no-dupe-keys
 const props = defineProps({
@@ -89,17 +91,29 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  extraColors: {
-    type: Array,
+  options: {
+    type: Array as PropType<{ name: string; values: string[]; restriction: 'expected' | 'included' | 'excluded' | 'only' }[]>,
     default: () => []
   },
   backgroundClass: {
     type: String,
     default: 'bg-white dark:bg-gray-900'
   },
-  overflowClass: {
+  extraClass: {
     type: String,
     default: ''
+  },
+  previewOnly: {
+    type: Boolean,
+    default: false
+  },
+  componentClass: {
+    type: String,
+    default: ''
+  },
+  ignoreVModel: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -107,21 +121,25 @@ const props = defineProps({
 const baseProps = reactive({ ...props.baseProps })
 const componentProps = reactive({ ...props.props })
 
+const { $prettier } = useNuxtApp()
 const appConfig = useAppConfig()
 const route = useRoute()
-// eslint-disable-next-line vue/no-dupe-keys
-const slug = props.slug || route.params.slug[1]
-const camelName = useCamelCase(slug)
-const name = `U${useUpperFirst(camelName)}`
+
+let name = props.slug || `U${upperFirst(camelCase(route.params.slug[route.params.slug.length - 1]))}`
+
+// TODO: Remove once merged on `main` branch
+if (['AvatarGroup', 'ButtonGroup', 'MeterGroup'].includes(name)) {
+  name = `U${name}`
+}
+if (['avatar-group', 'button-group', 'radio'].includes(name)) {
+  name = `U${upperFirst(camelCase(name))}`
+}
 
 const meta = await fetchComponentMeta(name)
 
 // Computed
 
-// eslint-disable-next-line vue/no-dupe-keys
-const ui = computed(() => ({ ...appConfig.ui[camelName], ...props.ui }))
-
-const fullProps = computed(() => ({ ...baseProps, ...componentProps }))
+const fullProps = computed(() => ({ ...componentProps, ...baseProps }))
 const vModel = computed({
   get: () => baseProps.modelValue,
   set: (value) => {
@@ -129,24 +147,69 @@ const vModel = computed({
   }
 })
 
+const generateOptions = (key: string, schema: { kind: string, schema: [], type: string }) => {
+  let options = []
+  const optionItem = props?.options?.find(item => item?.name === key) || null
+  const types = schema?.type?.split('|')?.map(item => item.trim()?.replaceAll('"', '')) || []
+  const hasIgnoredTypes = types?.every(item => ['string', 'number', 'boolean', 'array', 'object', 'Function'].includes(item))
+
+  if (key.toLowerCase().endsWith('color')) {
+    options = [...appConfig.ui.colors]
+  }
+
+  if (key.toLowerCase() === 'size' && schema?.schema?.length > 0) {
+    const baseSizeOrder = { 'xs': 1, 'sm': 2, 'md': 3, 'lg': 4, 'xl': 5 }
+    schema.schema.sort((a: string, b: string) => {
+      const aBase = a.match(/[a-zA-Z]+/)[0].toLowerCase()
+      const bBase = b.match(/[a-zA-Z]+/)[0].toLowerCase()
+
+      const aNum = parseInt(a.match(/\d+/)?.[0]) || 1
+      const bNum = parseInt(b.match(/\d+/)?.[0]) || 1
+
+      if (aBase === bBase) {
+        return aBase === 'xs' ? bNum - aNum : aNum - bNum
+      }
+
+      return baseSizeOrder[aBase] - baseSizeOrder[bBase]
+    })
+  }
+
+  if (schema?.schema?.length > 0 && schema?.kind === 'enum' && !hasIgnoredTypes && optionItem?.restriction !== 'only') {
+    options = schema.schema.filter(option => typeof option === 'string').map((option: string) => option.replaceAll('"', ''))
+  }
+
+  if (optionItem?.restriction === 'only') {
+    options = optionItem.values
+  }
+
+  if (optionItem?.restriction === 'expected') {
+    options = options.filter(item => optionItem.values.includes(item))
+  }
+
+  if (optionItem?.restriction === 'included') {
+    options = [...options, ...optionItem.values]
+  }
+
+  if (optionItem?.restriction === 'excluded') {
+    options = options.filter(item => !optionItem.values.includes(item))
+  }
+
+  return options
+}
+
 const propsToSelect = computed(() => Object.keys(componentProps).map((key) => {
   if (props.excludedProps.includes(key)) {
     return null
   }
 
   const prop = meta?.meta?.props?.find((prop: any) => prop.name === key)
-  const dottedKey = useKebabCase(key).replaceAll('-', '.')
-  const keys = useGet(ui.value, dottedKey, {})
-  let options = typeof keys === 'object' && Object.keys(keys)
-  if (key.toLowerCase().endsWith('color')) {
-    // @ts-ignore
-    options = [...appConfig.ui.colors, ...props.extraColors]
-  }
+  const schema = prop?.schema || {}
+  const options = generateOptions(key, schema)
 
   return {
     type: prop?.type || 'string',
     name: key,
-    label: key === 'modelValue' ? 'value' : useCamelCase(key),
+    label: key === 'modelValue' ? 'value' : camelCase(key),
     options
   }
 }).filter(Boolean))
@@ -155,14 +218,15 @@ const propsToSelect = computed(() => Object.keys(componentProps).map((key) => {
 const code = computed(() => {
   let code = `\`\`\`html
 <${name}`
-  for (const [key, value] of Object.entries(componentProps)) {
+  for (const [key, value] of Object.entries(fullProps.value)) {
     if (value === 'undefined' || value === null) {
       continue
     }
+    if (key === 'modelValue' && props.ignoreVModel) {
+      continue
+    }
 
-    const prop = meta?.meta?.props?.find((prop: any) => prop.name === key)
-
-    code += ` ${(prop?.type === 'boolean' && value !== true) || typeof value === 'object' ? ':' : ''}${key === 'modelValue' ? 'value' : useKebabCase(key)}${prop?.type === 'boolean' && !!value && key !== 'modelValue' ? '' : `="${typeof value === 'object' ? renderObject(value) : value}"`}`
+    code += ` ${(typeof value === 'boolean' && (value !== true || key === 'modelValue')) || typeof value === 'object' || typeof value === 'number' ? ':' : ''}${key === 'modelValue' ? 'model-value' : kebabCase(key)}${typeof value === 'boolean' && !!value && key !== 'modelValue' ? '' : `="${typeof value === 'object' ? renderObject(value) : value}"`}`
   }
 
   if (props.slots) {
@@ -177,7 +241,7 @@ const code = computed(() => {
       code += `>
   ${props.code}</${name}>`
     } else {
-      code += `>${props.code}</${name}>`
+      code += `>${props.code.endsWith('>') ? `${props.code}\n` : props.code}</${name}>`
     }
   } else {
     code += ' />'
@@ -204,12 +268,29 @@ function renderObject (obj: any) {
   return obj
 }
 
-const { data: ast } = await useAsyncData(`${name}-ast-${JSON.stringify(props)}`, () => transformContent('content:_markdown.md', code.value, {
-  highlight: {
-    theme: {
-      light: 'material-lighter',
-      dark: 'material-palenight'
+const shikiHighlighter = useShikiHighlighter({})
+const codeHighlighter = async (code: string, lang: string, theme: any, highlights: number[]) => shikiHighlighter.getHighlightedAST(code, lang, theme, { highlights })
+const { data: ast } = await useAsyncData(
+  `${name}-ast-${JSON.stringify({ props: componentProps, slots: props.slots, code: props.code })}`,
+  async () => {
+    let formatted = ''
+    try {
+      formatted = await $prettier.format(code.value) || code.value
+    } catch (error) {
+      formatted = code.value
     }
-  }
-}), { watch: [code] })
+
+    return transformContent('content:_markdown.md', formatted, {
+      markdown: {
+        highlight: {
+          highlighter: codeHighlighter,
+          theme: {
+            light: 'material-theme-lighter',
+            default: 'material-theme',
+            dark: 'material-theme-palenight'
+          }
+        }
+      }
+    })
+  }, { watch: [code] })
 </script>

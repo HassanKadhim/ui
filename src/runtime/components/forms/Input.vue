@@ -1,7 +1,7 @@
 <template>
   <div :class="ui.wrapper">
     <input
-      :id="name"
+      :id="inputId"
       ref="input"
       :name="name"
       :value="modelValue"
@@ -9,10 +9,11 @@
       :required="required"
       :placeholder="placeholder"
       :disabled="disabled || loading"
-      class="form-input"
       :class="inputClass"
-      v-bind="$attrs"
+      v-bind="attrs"
       @input="onInput"
+      @blur="onBlur"
+      @change="onChange"
     >
     <slot />
 
@@ -31,17 +32,21 @@
 </template>
 
 <script lang="ts">
-import { ref, computed, onMounted, defineComponent } from 'vue'
+import { ref, computed, toRef, onMounted, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
+import { twMerge, twJoin } from 'tailwind-merge'
 import UIcon from '../elements/Icon.vue'
-import { classNames } from '../../utils'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { defu } from 'defu'
+import { useUI } from '../../composables/useUI'
+import { useFormGroup } from '../../composables/useFormGroup'
+import { mergeConfig, looseToNumber } from '../../utils'
+import { useInjectButtonGroup } from '../../composables/useButtonGroup'
+import type { InputSize, InputColor, InputVariant, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { input } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof input>(appConfig.ui.strategy, appConfig.ui.input, input)
 
 export default defineComponent({
   components: {
@@ -56,6 +61,10 @@ export default defineComponent({
     type: {
       type: String,
       default: 'text'
+    },
+    id: {
+      type: String,
+      default: null
     },
     name: {
       type: String,
@@ -77,13 +86,17 @@ export default defineComponent({
       type: Boolean,
       default: false
     },
+    autofocusDelay: {
+      type: Number,
+      default: 100
+    },
     icon: {
       type: String,
       default: null
     },
     loadingIcon: {
       type: String,
-      default: () => appConfig.ui.input.default.loadingIcon
+      default: () => config.default.loadingIcon
     },
     leadingIcon: {
       type: String,
@@ -110,40 +123,57 @@ export default defineComponent({
       default: true
     },
     size: {
-      type: String,
-      default: () => appConfig.ui.input.default.size,
+      type: String as PropType<InputSize>,
+      default: null,
       validator (value: string) {
-        return Object.keys(appConfig.ui.input.size).includes(value)
+        return Object.keys(config.size).includes(value)
       }
     },
     color: {
-      type: String,
-      default: () => appConfig.ui.input.default.color,
+      type: String as PropType<InputColor>,
+      default: () => config.default.color,
       validator (value: string) {
-        return [...appConfig.ui.colors, ...Object.keys(appConfig.ui.input.color)].includes(value)
+        return [...appConfig.ui.colors, ...Object.keys(config.color)].includes(value)
       }
     },
     variant: {
-      type: String,
-      default: () => appConfig.ui.input.default.variant,
+      type: String as PropType<InputVariant>,
+      default: () => config.default.variant,
       validator (value: string) {
         return [
-          ...Object.keys(appConfig.ui.input.variant),
-          ...Object.values(appConfig.ui.input.color).flatMap(value => Object.keys(value))
+          ...Object.keys(config.variant),
+          ...Object.values(config.color).flatMap(value => Object.keys(value))
         ].includes(value)
       }
     },
+    inputClass: {
+      type: String,
+      default: null
+    },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.input>>,
-      default: () => appConfig.ui.input
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
+    },
+    modelModifiers: {
+      type: Object as PropType<{ trim?: boolean, lazy?: boolean, number?: boolean }>,
+      default: () => ({})
     }
   },
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'blur'],
   setup (props, { emit, slots }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
+    const { ui, attrs } = useUI('input', toRef(props, 'ui'), config, toRef(props, 'class'))
 
-    const ui = computed<Partial<typeof appConfig.ui.input>>(() => defu({}, props.ui, appConfig.ui.input))
+    const { size: sizeButtonGroup, rounded } = useInjectButtonGroup({ ui, props })
+
+    const { emitFormBlur, emitFormInput, size: sizeFormGroup, color, inputId, name } = useFormGroup(props, config)
+
+    const size = computed(() => sizeButtonGroup.value || sizeFormGroup.value)
+
+    const modelModifiers = ref(defu({}, props.modelModifiers, { trim: false, lazy: false, number: false }))
 
     const input = ref<HTMLInputElement | null>(null)
 
@@ -153,29 +183,65 @@ export default defineComponent({
       }
     }
 
-    const onInput = (event: InputEvent) => {
-      emit('update:modelValue', (event.target as HTMLInputElement).value)
+    // Custom function to handle the v-model properties
+    const updateInput = (value: string) => {
+
+      if (modelModifiers.value.trim) {
+        value = value.trim()
+      }
+
+      if (modelModifiers.value.number || props.type === 'number') {
+        value = looseToNumber(value)
+      }
+
+      emit('update:modelValue', value)
+      emitFormInput()
+    }
+
+    const onInput = (event: Event) => {
+      if (!modelModifiers.value.lazy) {
+        updateInput((event.target as HTMLInputElement).value)
+      }
+    }
+
+    const onChange = (event: Event) => {
+      const value = (event.target as HTMLInputElement).value
+
+      if (modelModifiers.value.lazy) {
+        updateInput(value)
+      }
+
+      // Update trimmed input so that it has same behaviour as native input https://github.com/vuejs/core/blob/5ea8a8a4fab4e19a71e123e4d27d051f5e927172/packages/runtime-dom/src/directives/vModel.ts#L63
+      if (modelModifiers.value.trim) {
+        (event.target as HTMLInputElement).value = value.trim()
+      }
+    }
+
+    const onBlur = (event: FocusEvent) => {
+      emitFormBlur()
+      emit('blur', event)
     }
 
     onMounted(() => {
       setTimeout(() => {
         autoFocus()
-      }, 100)
+      }, props.autofocusDelay)
     })
 
     const inputClass = computed(() => {
-      const variant = ui.value.color?.[props.color as string]?.[props.variant as string] || ui.value.variant[props.variant]
+      const variant = ui.value.color?.[color.value as string]?.[props.variant as string] || ui.value.variant[props.variant]
 
-      return classNames(
+      return twMerge(twJoin(
         ui.value.base,
-        ui.value.rounded,
+        ui.value.form,
+        rounded.value,
         ui.value.placeholder,
-        ui.value.size[props.size],
-        props.padded ? ui.value.padding[props.size] : 'p-0',
-        variant?.replaceAll('{color}', props.color),
-        (isLeading.value || slots.leading) && ui.value.leading.padding[props.size],
-        (isTrailing.value || slots.trailing) && ui.value.trailing.padding[props.size]
-      )
+        ui.value.size[size.value],
+        props.padded ? ui.value.padding[size.value] : 'p-0',
+        variant?.replaceAll('{color}', color.value),
+        (isLeading.value || slots.leading) && ui.value.leading.padding[size.value],
+        (isTrailing.value || slots.trailing) && ui.value.trailing.padding[size.value]
+      ), props.inputClass)
     })
 
     const isLeading = computed(() => {
@@ -203,45 +269,50 @@ export default defineComponent({
     })
 
     const leadingWrapperIconClass = computed(() => {
-      return classNames(
+      return twJoin(
         ui.value.icon.leading.wrapper,
         ui.value.icon.leading.pointer,
-        ui.value.icon.leading.padding[props.size]
+        ui.value.icon.leading.padding[size.value]
       )
     })
 
     const leadingIconClass = computed(() => {
-      return classNames(
+      return twJoin(
         ui.value.icon.base,
-        appConfig.ui.colors.includes(props.color) && ui.value.icon.color.replaceAll('{color}', props.color),
-        ui.value.icon.size[props.size],
-        props.loading && 'animate-spin'
+        color.value && appConfig.ui.colors.includes(color.value) && ui.value.icon.color.replaceAll('{color}', color.value),
+        ui.value.icon.size[size.value],
+        props.loading && ui.value.icon.loading
       )
     })
 
     const trailingWrapperIconClass = computed(() => {
-      return classNames(
+      return twJoin(
         ui.value.icon.trailing.wrapper,
         ui.value.icon.trailing.pointer,
-        ui.value.icon.trailing.padding[props.size]
+        ui.value.icon.trailing.padding[size.value]
       )
     })
 
     const trailingIconClass = computed(() => {
-      return classNames(
+      return twJoin(
         ui.value.icon.base,
-        appConfig.ui.colors.includes(props.color) && ui.value.icon.color.replaceAll('{color}', props.color),
-        ui.value.icon.size[props.size],
-        props.loading && !isLeading.value && 'animate-spin'
+        color.value && appConfig.ui.colors.includes(color.value) && ui.value.icon.color.replaceAll('{color}', color.value),
+        ui.value.icon.size[size.value],
+        props.loading && !isLeading.value && ui.value.icon.loading
       )
     })
 
     return {
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
+      attrs,
+      // eslint-disable-next-line vue/no-dupe-keys
+      name,
+      inputId,
       input,
       isLeading,
       isTrailing,
+      // eslint-disable-next-line vue/no-dupe-keys
       inputClass,
       leadingIconName,
       leadingIconClass,
@@ -249,7 +320,9 @@ export default defineComponent({
       trailingIconName,
       trailingIconClass,
       trailingWrapperIconClass,
-      onInput
+      onInput,
+      onChange,
+      onBlur
     }
   }
 })

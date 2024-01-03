@@ -1,21 +1,20 @@
 <template>
   <div :class="ui.wrapper">
-    <div class="flex items-center h-5">
+    <div :class="ui.container">
       <input
-        :id="`${name}-${value}`"
+        :id="inputId"
         v-model="pick"
         :name="name"
         :required="required"
         :value="value"
         :disabled="disabled"
         type="radio"
-        class="form-radio"
         :class="inputClass"
-        v-bind="$attrs"
+        v-bind="attrs"
       >
     </div>
-    <div v-if="label || $slots.label" class="ms-3 text-sm">
-      <label :for="`${name}-${value}`" :class="ui.label">
+    <div v-if="label || $slots.label" :class="ui.inner">
+      <label :for="inputId" :class="ui.label">
         <slot name="label">{{ label }}</slot>
         <span v-if="required" :class="ui.required">*</span>
       </label>
@@ -27,20 +26,28 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent } from 'vue'
+import { computed, defineComponent, inject, toRef, onMounted, ref } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { classNames } from '../../utils'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import { useUI } from '../../composables/useUI'
+import { mergeConfig } from '../../utils'
+import type { Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { radio } from '#ui/ui.config'
+import colors from '#ui-colors'
+import { uid } from '../../utils/uid'
+import { useFormGroup } from '../../composables/useFormGroup'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof radio>(appConfig.ui.strategy, appConfig.ui.radio, radio)
 
 export default defineComponent({
   inheritAttrs: false,
   props: {
+    id: {
+      type: String,
+      default: () => null
+    },
     value: {
       type: [String, Number, Boolean],
       default: null
@@ -70,23 +77,38 @@ export default defineComponent({
       default: false
     },
     color: {
-      type: String,
-      default: () => appConfig.ui.radio.default.color,
+      type: String as PropType<typeof colors[number]>,
+      default: () => config.default.color,
       validator (value: string) {
         return appConfig.ui.colors.includes(value)
       }
     },
+    inputClass: {
+      type: String,
+      default: null
+    },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.radio>>,
-      default: () => appConfig.ui.radio
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'change'],
   setup (props, { emit }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
+    const { ui, attrs } = useUI('radio', toRef(props, 'ui'), config, toRef(props, 'class'))
 
-    const ui = computed<Partial<typeof appConfig.ui.radio>>(() => defu({}, props.ui, appConfig.ui.radio))
+    const radioGroup = inject('radio-group', null)
+    const { emitFormChange, color, name } = radioGroup ?? useFormGroup(props, config)
+    const inputId = ref(props.id)
+
+    onMounted(() => {
+      if (!inputId.value) {
+        inputId.value = uid()
+      }
+    })
 
     const pick = computed({
       get () {
@@ -94,23 +116,34 @@ export default defineComponent({
       },
       set (value) {
         emit('update:modelValue', value)
+        emit('change', value)
+
+        if (!radioGroup) {
+          emitFormChange()
+        }
       }
     })
 
     const inputClass = computed(() => {
-      return classNames(
+      return twMerge(twJoin(
         ui.value.base,
+        ui.value.form,
         ui.value.background,
         ui.value.border,
-        ui.value.ring.replaceAll('{color}', props.color),
-        ui.value.color.replaceAll('{color}', props.color)
-      )
+        color.value && ui.value.ring.replaceAll('{color}', color.value),
+        color.value && ui.value.color.replaceAll('{color}', color.value)
+      ), props.inputClass)
     })
 
     return {
+      inputId,
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
+      attrs,
       pick,
+      // eslint-disable-next-line vue/no-dupe-keys
+      name,
+      // eslint-disable-next-line vue/no-dupe-keys
       inputClass
     }
   }

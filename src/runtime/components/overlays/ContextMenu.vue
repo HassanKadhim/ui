@@ -1,10 +1,14 @@
 <template>
-  <div v-if="isOpen" ref="container" :class="[ui.container, ui.width]">
-    <transition appear v-bind="ui.transition">
-      <div :class="[ui.base, ui.ring, ui.rounded, ui.shadow, ui.background]">
-        <slot />
+  <div v-if="isOpen" ref="container" :class="wrapperClass" v-bind="attrs">
+    <Transition appear v-bind="ui.transition">
+      <div>
+        <div v-if="popper.arrow" data-popper-arrow :class="Object.values(ui.arrow)" />
+
+        <div :class="[ui.base, ui.ring, ui.rounded, ui.shadow, ui.background]">
+          <slot />
+        </div>
       </div>
-    </transition>
+    </Transition>
   </div>
 </template>
 
@@ -14,16 +18,19 @@ import type { PropType, Ref } from 'vue'
 import { defu } from 'defu'
 import { onClickOutside } from '@vueuse/core'
 import type { VirtualElement } from '@popperjs/core'
+import { twMerge, twJoin } from 'tailwind-merge'
+import { useUI } from '../../composables/useUI'
 import { usePopper } from '../../composables/usePopper'
-import type { PopperOptions } from '../../types'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { mergeConfig } from '../../utils'
+import type { PopperOptions, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { contextMenu } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof contextMenu>(appConfig.ui.strategy, appConfig.ui.contextMenu, contextMenu)
 
 export default defineComponent({
+  inheritAttrs: false,
   props: {
     modelValue: {
       type: Boolean,
@@ -37,17 +44,18 @@ export default defineComponent({
       type: Object as PropType<PopperOptions>,
       default: () => ({})
     },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.contextMenu>>,
-      default: () => appConfig.ui.contextMenu
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   emits: ['update:modelValue', 'close'],
   setup (props, { emit }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
-
-    const ui = computed<Partial<typeof appConfig.ui.contextMenu>>(() => defu({}, props.ui, appConfig.ui.contextMenu))
+    const { ui, attrs } = useUI('contextMenu', toRef(props, 'ui'), config)
 
     const popper = computed<PopperOptions>(() => defu({}, props.popper, ui.value.popper as PopperOptions))
 
@@ -64,6 +72,13 @@ export default defineComponent({
 
     const [, container] = usePopper(popper.value, virtualElement)
 
+    const wrapperClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.container,
+        ui.value.width
+      ), props.class)
+    })
+
     onClickOutside(container, () => {
       isOpen.value = false
     })
@@ -71,7 +86,11 @@ export default defineComponent({
     return {
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
+      attrs,
       isOpen,
+      wrapperClass,
+      // eslint-disable-next-line vue/no-dupe-keys
+      popper,
       container
     }
   }

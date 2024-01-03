@@ -1,38 +1,43 @@
-import { h, cloneVNode, computed, defineComponent } from 'vue'
+import { h, cloneVNode, computed, toRef, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { classNames, getSlotsChildren } from '../../utils'
-import Avatar from './Avatar.vue'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import UAvatar from './Avatar.vue'
+import { useUI } from '../../composables/useUI'
+import { mergeConfig, getSlotsChildren } from '../../utils'
+import type { AvatarSize, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { avatar, avatarGroup } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const avatarConfig = mergeConfig<typeof avatar>(appConfig.ui.strategy, appConfig.ui.avatar, avatar)
+
+const avatarGroupConfig = mergeConfig<typeof avatarGroup>(appConfig.ui.strategy, appConfig.ui.avatarGroup, avatarGroup)
 
 export default defineComponent({
+  inheritAttrs: false,
   props: {
     size: {
-      type: String,
+      type: String as PropType<AvatarSize>,
       default: null,
       validator (value: string) {
-        return Object.keys(appConfig.ui.avatar.size).includes(value)
+        return Object.keys(avatarConfig.size).includes(value)
       }
     },
     max: {
       type: Number,
       default: null
     },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.avatarGroup>>,
-      default: () => appConfig.ui.avatarGroup
+      type: Object as PropType<Partial<typeof avatarGroupConfig> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   setup (props, { slots }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
-
-    const ui = computed<Partial<typeof appConfig.ui.avatarGroup>>(() => defu({}, props.ui, appConfig.ui.avatarGroup))
+    const { ui, attrs } = useUI('avatarGroup', toRef(props, 'ui'), avatarGroupConfig, toRef(props, 'class'))
 
     const children = computed(() => getSlotsChildren(slots))
 
@@ -47,28 +52,22 @@ export default defineComponent({
         }
 
         vProps.class = node.props.class || ''
-        vProps.class += ` ${classNames(
-          ui.value.ring,
-          ui.value.margin
-        )}`
+        vProps.class = twMerge(twJoin(vProps.class, ui.value.ring, ui.value.margin), vProps.class)
 
         return cloneVNode(node, vProps)
       }
 
       if (max.value !== undefined && index === max.value) {
-        return h(Avatar, {
-          size: props.size,
+        return h(UAvatar, {
+          size: props.size || (avatarConfig.default.size as AvatarSize),
           text: `+${children.value.length - max.value}`,
-          class: classNames(
-            ui.value.ring,
-            ui.value.margin
-          )
+          class: twJoin(ui.value.ring, ui.value.margin)
         })
       }
 
       return null
     }).filter(Boolean).reverse())
 
-    return () => h('div', { class: ui.value.wrapper }, clones.value)
+    return () => h('div', { class: ui.value.wrapper, ...attrs.value }, clones.value)
   }
 })

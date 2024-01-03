@@ -1,101 +1,97 @@
 <template>
-  <Combobox
+  <HCombobox
     :by="by"
     :model-value="modelValue"
     :multiple="multiple"
     :nullable="nullable"
+    :class="ui.wrapper"
+    v-bind="attrs"
+    as="div"
     @update:model-value="onSelect"
   >
-    <div :class="ui.wrapper">
-      <div v-show="searchable" :class="ui.input.wrapper">
-        <UIcon v-if="iconName" :name="iconName" :class="iconClass" aria-hidden="true" />
-        <ComboboxInput
-          ref="comboboxInput"
-          :value="query"
-          :class="[ui.input.base, ui.input.size, ui.input.height, ui.input.padding, icon && ui.input.icon.padding]"
-          :placeholder="placeholder"
-          autocomplete="off"
-          @change="query = $event.target.value"
-        />
+    <div v-show="searchable" :class="ui.input.wrapper">
+      <UIcon v-if="iconName" :name="iconName" :class="iconClass" aria-hidden="true" />
+      <HComboboxInput
+        ref="comboboxInput"
+        :value="query"
+        :class="[ui.input.base, ui.input.size, ui.input.height, ui.input.padding, icon && ui.input.icon.padding, closeButton && ui.input.closeButton.padding]"
+        :placeholder="placeholder"
+        :aria-label="placeholder"
+        autocomplete="off"
+        @change="query = $event.target.value"
+      />
 
-        <UButton
-          v-if="closeButton"
-          v-bind="{ ...ui.default.closeButton, ...closeButton }"
-          :class="ui.input.closeButton"
-          aria-label="Close"
-          @click="onClear"
-        />
-      </div>
-
-      <ComboboxOptions
-        v-if="groups.length"
-        static
-        hold
-        as="div"
-        aria-label="Commands"
-        :class="ui.container"
-      >
-        <CommandPaletteGroup
-          v-for="group of groups"
-          :key="group.key"
-          :query="query"
-          :group="group"
-          :group-attribute="groupAttribute"
-          :command-attribute="commandAttribute"
-          :selected-icon="selectedIcon"
-          :ui="ui"
-        >
-          <template v-for="(_, name) in $slots" #[name]="slotData">
-            <slot :name="name" v-bind="slotData" />
-          </template>
-        </CommandPaletteGroup>
-      </ComboboxOptions>
-
-      <template v-else-if="emptyState">
-        <slot name="empty-state">
-          <div :class="ui.emptyState.wrapper">
-            <UIcon v-if="emptyState.icon" :name="emptyState.icon" :class="ui.emptyState.icon" aria-hidden="true" />
-            <p :class="query ? ui.emptyState.queryLabel : ui.emptyState.label">
-              {{ query ? emptyState.queryLabel : emptyState.label }}
-            </p>
-          </div>
-        </slot>
-      </template>
+      <UButton v-if="closeButton" aria-label="Close" v-bind="{ ...(ui.default.closeButton || {}), ...closeButton }" :class="ui.input.closeButton.base" @click="onClear" />
     </div>
-  </Combobox>
+
+    <HComboboxOptions
+      v-if="groups.length"
+      static
+      hold
+      as="div"
+      aria-label="Commands"
+      :class="ui.container"
+    >
+      <CommandPaletteGroup
+        v-for="group of groups"
+        :key="group.key"
+        :query="query"
+        :group="group"
+        :group-attribute="groupAttribute"
+        :command-attribute="commandAttribute"
+        :selected-icon="selectedIcon"
+        :ui="ui"
+      >
+        <template v-for="(_, name) in $slots" #[name]="slotData">
+          <slot :name="name" v-bind="slotData" />
+        </template>
+      </CommandPaletteGroup>
+    </HComboboxOptions>
+
+    <template v-else-if="emptyState">
+      <slot name="empty-state">
+        <div :class="ui.emptyState.wrapper">
+          <UIcon v-if="emptyState.icon" :name="emptyState.icon" :class="ui.emptyState.icon" aria-hidden="true" />
+          <p :class="query ? ui.emptyState.queryLabel : ui.emptyState.label">
+            {{ query ? emptyState.queryLabel : emptyState.label }}
+          </p>
+        </div>
+      </slot>
+    </template>
+  </HCombobox>
 </template>
 
 <script lang="ts">
-import { ref, computed, watch, onMounted, defineComponent } from 'vue'
-import { Combobox, ComboboxInput, ComboboxOptions } from '@headlessui/vue'
+import { ref, computed, watch, toRef, onMounted, defineComponent } from 'vue'
+import { Combobox as HCombobox, ComboboxInput as HComboboxInput, ComboboxOptions as HComboboxOptions } from '@headlessui/vue'
 import type { ComputedRef, PropType, ComponentPublicInstance } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { useFuse } from '@vueuse/integrations/useFuse'
-import { groupBy, map } from 'lodash-es'
-import { defu } from 'defu'
 import type { UseFuseOptions } from '@vueuse/integrations/useFuse'
-import type { Group, Command } from '../../types/command-palette'
+import { twJoin } from 'tailwind-merge'
+import { defu } from 'defu'
 import UIcon from '../elements/Icon.vue'
 import UButton from '../elements/Button.vue'
-import type { Button } from '../../types/button'
 import CommandPaletteGroup from './CommandPaletteGroup.vue'
-import { classNames } from '../../utils'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { useUI } from '../../composables/useUI'
+import { mergeConfig } from '../../utils'
+import type { Group, Command, Button, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { commandPalette } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof commandPalette>(appConfig.ui.strategy, appConfig.ui.commandPalette, commandPalette)
 
 export default defineComponent({
   components: {
-    Combobox,
-    ComboboxInput,
-    ComboboxOptions,
+    HCombobox,
+    HComboboxInput,
+    HComboboxOptions,
     UIcon,
     UButton,
     CommandPaletteGroup
   },
+  inheritAttrs: false,
   props: {
     modelValue: {
       type: [String, Number, Object, Array],
@@ -127,23 +123,23 @@ export default defineComponent({
     },
     icon: {
       type: String,
-      default: () => appConfig.ui.commandPalette.default.icon
+      default: () => config.default.icon
     },
     loadingIcon: {
       type: String,
-      default: () => appConfig.ui.commandPalette.default.loadingIcon
+      default: () => config.default.loadingIcon
     },
     selectedIcon: {
       type: String,
-      default: () => appConfig.ui.commandPalette.default.selectedIcon
+      default: () => config.default.selectedIcon
     },
     closeButton: {
-      type: Object as PropType<Partial<Button>>,
-      default: () => appConfig.ui.commandPalette.default.closeButton
+      type: Object as PropType<Button>,
+      default: () => config.default.closeButton as unknown as Button
     },
     emptyState: {
       type: Object as PropType<{ icon: string, label: string, queryLabel: string }>,
-      default: () => appConfig.ui.commandPalette.default.emptyState
+      default: () => config.default.emptyState
     },
     placeholder: {
       type: String,
@@ -170,20 +166,21 @@ export default defineComponent({
       default: 200
     },
     fuse: {
-      type: Object as PropType<Partial<UseFuseOptions<Command>>>,
+      type: Object as PropType<UseFuseOptions<Command>>,
       default: () => ({})
     },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.commandPalette>>,
-      default: () => appConfig.ui.commandPalette
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   emits: ['update:modelValue', 'close'],
   setup (props, { emit, expose }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
-
-    const ui = computed<Partial<typeof appConfig.ui.commandPalette>>(() => defu({}, props.ui, appConfig.ui.commandPalette))
+    const { ui, attrs } = useUI('commandPalette', toRef(props, 'ui'), config, toRef(props, 'class'))
 
     const query = ref('')
     const comboboxInput = ref<ComponentPublicInstance<HTMLInputElement>>()
@@ -192,7 +189,7 @@ export default defineComponent({
 
     onMounted(() => {
       if (props.autoselect) {
-        activateFirstOption()
+        activateNextOption()
       }
     })
 
@@ -216,32 +213,72 @@ export default defineComponent({
       matchAllWhenSearchEmpty: true
     }))
 
-    const commands = computed(() => props.groups.filter(group => !group.search).reduce((acc, group) => {
-      return acc.concat(group.commands.map(command => ({ ...command, group: group.key })))
-    }, [] as Command[]))
+    const commands = computed(() => {
+      const commands: Command[] = []
+      for (const group of props.groups) {
+        if (!group.search) {
+          commands.push(...(group.commands?.map(command => ({ ...command, group: group.key })) || []))
+        }
+      }
+      return commands
+    })
 
     const searchResults = ref<{ [key: string]: any }>({})
 
     const { results } = useFuse(query, commands, options)
 
-    const groups = computed(() => ([
-      ...map(groupBy(results.value, command => command.item.group), (results, key) => {
-        const commands = results.map((result) => {
-          const { item, ...data } = result
+    function getGroupWithCommands (group: Group, commands: Command[]) {
+      if (!group) {
+        return
+      }
 
-          return {
-            ...item,
-            ...data
-          }
-        })
+      if (group.filter && typeof group.filter === 'function') {
+        commands = group.filter(query.value, commands)
+      }
 
-        return {
-          ...props.groups.find(group => group.key === key),
-          commands: commands.slice(0, options.value.resultLimit)
-        } as Group
-      }),
-      ...props.groups.filter(group => !!group.search).map(group => ({ ...group, commands: (searchResults.value[group.key] || []).slice(0, options.value.resultLimit) })).filter(group => group.commands.length)
-    ]))
+      return {
+        ...group,
+        commands: commands.slice(0, options.value.resultLimit)
+      }
+    }
+
+    const groups = computed(() => {
+      if (!results.value) {
+        return []
+      }
+
+      const groupedCommands: Record<string, Command[]> = results.value.reduce((acc, command) => {
+        const { item, ...data } = command
+        if (!item.group) {
+          return acc
+        }
+
+        acc[item.group] ||= []
+        acc[item.group].push({ ...item, ...data })
+
+        return acc
+      }, {})
+
+      const groups: Group[] = Object.entries(groupedCommands).map(([key, commands]) => {
+        const group = props.groups.find(group => group.key === key)
+        if (!group) {
+          return null
+        }
+
+        return getGroupWithCommands(group, commands)
+      }).filter(Boolean)
+
+      const searchGroups = props.groups.filter(group => !!group.search && searchResults.value[group.key]?.length).map(group => {
+        const commands = (searchResults.value[group.key] || [])
+
+        return getGroupWithCommands(group, [...commands])
+      })
+
+      return [
+        ...groups,
+        ...searchGroups
+      ]
+    })
 
     const debouncedSearch = useDebounceFn(async () => {
       const searchableGroups = props.groups.filter(group => !!group.search)
@@ -252,20 +289,19 @@ export default defineComponent({
       isLoading.value = true
 
       await Promise.all(searchableGroups.map(async (group) => {
+        // @ts-ignore
         searchResults.value[group.key] = await group.search(query.value)
       }))
 
       isLoading.value = false
+
+      activateFirstOption()
     }, props.debounce)
 
     watch(query, () => {
       debouncedSearch()
 
-      // Select first item on search changes
-      setTimeout(() => {
-        // https://github.com/tailwindlabs/headlessui/blob/6fa6074cd5d3a96f78a2d965392aa44101f5eede/packages/%40headlessui-vue/src/components/combobox/combobox.ts#L804
-        comboboxInput.value?.$el.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp' }))
-      }, 0)
+      activateFirstOption()
     })
 
     const iconName = computed(() => {
@@ -277,10 +313,10 @@ export default defineComponent({
     })
 
     const iconClass = computed(() => {
-      return classNames(
+      return twJoin(
         ui.value.input.icon.base,
         ui.value.input.icon.size,
-        ((props.loading || isLoading.value) && props.loadingIcon) && 'animate-spin'
+        ((props.loading || isLoading.value) && props.loadingIcon) && ui.value.input.icon.loading
       )
     })
 
@@ -289,9 +325,15 @@ export default defineComponent({
     // Methods
 
     function activateFirstOption () {
-      // hack combobox by using keyboard event
-      // https://github.com/tailwindlabs/headlessui/blob/6fa6074cd5d3a96f78a2d965392aa44101f5eede/packages/%40headlessui-vue/src/components/combobox/combobox.ts#L769
       setTimeout(() => {
+        // https://github.com/tailwindlabs/headlessui/blob/6fa6074cd5d3a96f78a2d965392aa44101f5eede/packages/%40headlessui-vue/src/components/combobox/combobox.ts#L804
+        comboboxInput.value?.$el.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp' }))
+      }, 0)
+    }
+
+    function activateNextOption () {
+      setTimeout(() => {
+        // https://github.com/tailwindlabs/headlessui/blob/6fa6074cd5d3a96f78a2d965392aa44101f5eede/packages/%40headlessui-vue/src/components/combobox/combobox.ts#L769
         comboboxInput.value?.$el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
       }, 0)
     }
@@ -327,6 +369,7 @@ export default defineComponent({
     return {
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
+      attrs,
       // eslint-disable-next-line vue/no-dupe-keys
       groups,
       comboboxInput,

@@ -1,34 +1,48 @@
 <template>
-  <div :class="[ui.base, ui.background, ui.rounded]" />
+  <div :class="skeletonClass" v-bind="attrs" />
 </template>
 
 <script lang="ts">
-import { computed, defineComponent } from 'vue'
+import { computed, toRef, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import { useUI } from '../../composables/useUI'
+import { mergeConfig } from '../../utils'
+import type { Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { skeleton } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof skeleton>(appConfig.ui.strategy, appConfig.ui.skeleton, skeleton)
 
 export default defineComponent({
+  inheritAttrs: false,
   props: {
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.skeleton>>,
-      default: () => appConfig.ui.skeleton
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   setup (props) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
+    const { ui, attrs } = useUI('skeleton', toRef(props, 'ui'), config)
 
-    const ui = computed<Partial<typeof appConfig.ui.skeleton>>(() => defu({}, props.ui, appConfig.ui.skeleton))
+    const skeletonClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.base,
+        ui.value.background,
+        ui.value.rounded
+      ), props.class)
+    })
 
     return {
       // eslint-disable-next-line vue/no-dupe-keys
-      ui
+      ui,
+      attrs,
+      skeletonClass
     }
   }
 })

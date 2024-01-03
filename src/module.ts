@@ -1,28 +1,42 @@
-import { defineNuxtModule, installModule, addComponentsDir, addImportsDir, createResolver, addPlugin, resolvePath } from '@nuxt/kit'
+import { defineNuxtModule, installModule, addComponentsDir, addImportsDir, createResolver, addPlugin } from '@nuxt/kit'
 import defaultColors from 'tailwindcss/colors.js'
 import { defaultExtractor as createDefaultExtractor } from 'tailwindcss/lib/lib/defaultExtractor.js'
-import { iconsPlugin, getIconCollections } from '@egoist/tailwindcss-icons'
+import { iconsPlugin, getIconCollections, type CollectionNames, type IconsPluginOptions } from '@egoist/tailwindcss-icons'
 import { name, version } from '../package.json'
 import { generateSafelist, excludeColors, customSafelistExtractor } from './colors'
-import appConfig from './runtime/app.config'
-
-type DeepPartial<T> = Partial<{ [P in keyof T]: DeepPartial<T[P]> | { [key: string]: string } }>
+import createTemplates from './templates'
+import * as config from './runtime/ui.config'
+import type { DeepPartial, Strategy } from './runtime/types/utils'
 
 const defaultExtractor = createDefaultExtractor({ tailwindConfig: { separator: ':' } })
 
+// @ts-ignore
 delete defaultColors.lightBlue
+// @ts-ignore
 delete defaultColors.warmGray
+// @ts-ignore
 delete defaultColors.trueGray
+// @ts-ignore
 delete defaultColors.coolGray
+// @ts-ignore
 delete defaultColors.blueGray
+
+type UI = {
+  primary?: string
+  gray?: string
+  colors?: string[]
+  strategy?: Strategy
+  [key: string]: any
+} & DeepPartial<typeof config>
 
 declare module 'nuxt/schema' {
   interface AppConfigInput {
-    ui?: {
-      primary?: string
-      gray?: string
-      colors?: string[]
-    } & DeepPartial<typeof appConfig.ui>
+    ui?: UI
+  }
+}
+declare module '@nuxt/schema' {
+  interface AppConfigInput {
+    ui?: UI
   }
 }
 
@@ -37,7 +51,7 @@ export interface ModuleOptions {
    */
   global?: boolean
 
-  icons: string[] | string
+  icons: CollectionNames[] | 'all' | IconsPluginOptions
 
   safelistColors?: string[]
 }
@@ -64,20 +78,21 @@ export default defineNuxtModule<ModuleOptions>({
     nuxt.options.build.transpile.push(runtimeDir)
     nuxt.options.build.transpile.push('@popperjs/core', '@headlessui/vue')
 
+    nuxt.options.alias['#ui'] = runtimeDir
+
     nuxt.options.css.push(resolve(runtimeDir, 'ui.css'))
 
-    const appConfigFile = await resolvePath(resolve(runtimeDir, 'app.config'))
-    nuxt.hook('app:resolve', (app) => {
-      app.configs.push(appConfigFile)
-    })
-
+    // @ts-ignore
     nuxt.hook('tailwindcss:config', function (tailwindConfig) {
+      tailwindConfig.theme = tailwindConfig.theme || {}
+      tailwindConfig.theme.extend = tailwindConfig.theme.extend || {}
+      tailwindConfig.theme.extend.colors = tailwindConfig.theme.extend.colors || {}
+
       const globalColors: any = {
         ...(tailwindConfig.theme.colors || defaultColors),
         ...tailwindConfig.theme.extend?.colors
       }
 
-      tailwindConfig.theme.extend.colors = tailwindConfig.theme.extend.colors || {}
       // @ts-ignore
       globalColors.primary = tailwindConfig.theme.extend.colors.primary = {
         50: 'rgb(var(--color-primary-50) / <alpha-value>)',
@@ -90,7 +105,8 @@ export default defineNuxtModule<ModuleOptions>({
         700: 'rgb(var(--color-primary-700) / <alpha-value>)',
         800: 'rgb(var(--color-primary-800) / <alpha-value>)',
         900: 'rgb(var(--color-primary-900) / <alpha-value>)',
-        950: 'rgb(var(--color-primary-950) / <alpha-value>)'
+        950: 'rgb(var(--color-primary-950) / <alpha-value>)',
+        DEFAULT: 'rgb(var(--color-primary-DEFAULT) / <alpha-value>)'
       }
 
       if (globalColors.gray) {
@@ -115,37 +131,42 @@ export default defineNuxtModule<ModuleOptions>({
 
       const colors = excludeColors(globalColors)
 
+      // @ts-ignore
       nuxt.options.appConfig.ui = {
-        ...nuxt.options.appConfig.ui,
         primary: 'green',
         gray: 'cool',
-        colors
+        colors,
+        strategy: 'merge'
       }
 
       tailwindConfig.safelist = tailwindConfig.safelist || []
-      tailwindConfig.safelist.push(...generateSafelist(options.safelistColors))
+      tailwindConfig.safelist.push(...generateSafelist(options.safelistColors || [], colors))
 
       tailwindConfig.plugins = tailwindConfig.plugins || []
-      tailwindConfig.plugins.push(iconsPlugin({ collections: getIconCollections(options.icons as any[]) }))
+      tailwindConfig.plugins.push(iconsPlugin(Array.isArray(options.icons) ? { collections: getIconCollections(options.icons) } : typeof options.icons === 'object' ? options.icons as IconsPluginOptions : {}))
     })
+
+    createTemplates(nuxt)
 
     // Modules
 
+    await installModule('nuxt-icon')
     await installModule('@nuxtjs/color-mode', { classSuffix: '' })
     await installModule('@nuxtjs/tailwindcss', {
       exposeConfig: true,
       config: {
         darkMode: 'class',
         plugins: [
-          require("@tailwindcss/forms")({ strategy: 'class' }),
+          require('@tailwindcss/forms')({ strategy: 'class' }),
           require('@tailwindcss/aspect-ratio'),
           require('@tailwindcss/typography'),
-          require('@tailwindcss/container-queries')
+          require('@tailwindcss/container-queries'),
+          require('@headlessui/tailwindcss')
         ],
         content: {
           files: [
             resolve(runtimeDir, 'components/**/*.{vue,mjs,ts}'),
-            resolve(runtimeDir, '*.{mjs,js,ts}')
+            resolve(runtimeDir, 'ui.config/**/*.{mjs,js,ts}')
           ],
           transform: {
             vue: (content) => {
@@ -156,6 +177,7 @@ export default defineNuxtModule<ModuleOptions>({
             vue: (content) => {
               return [
                 ...defaultExtractor(content),
+                // @ts-ignore
                 ...customSafelistExtractor(options.prefix, content, nuxt.options.appConfig.ui.colors, options.safelistColors)
               ]
             }

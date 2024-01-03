@@ -1,47 +1,65 @@
 <template>
-  <kbd :class="[ui.base, ui.size[size], ui.padding, ui.rounded, ui.font, ui.background, ui.ring]">
+  <kbd :class="kbdClass" v-bind="attrs">
     <slot>{{ value }}</slot>
   </kbd>
 </template>
 
 <script lang="ts">
-import { defineComponent, computed } from 'vue'
+import { toRef, defineComponent, computed } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import { useUI } from '../../composables/useUI'
+import { mergeConfig } from '../../utils'
+import type { KbdSize, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { kbd } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof kbd>(appConfig.ui.strategy, appConfig.ui.kbd, kbd)
 
 export default defineComponent({
+  inheritAttrs: false,
   props: {
     value: {
       type: String,
       default: null
     },
     size: {
-      type: String,
-      default: () => appConfig.ui.kbd.default.size,
+      type: String as PropType<KbdSize>,
+      default: () => config.default.size,
       validator (value: string) {
-        return Object.keys(appConfig.ui.kbd.size).includes(value)
+        return Object.keys(config.size).includes(value)
       }
     },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.kbd>>,
-      default: () => appConfig.ui.kbd
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   setup (props) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
+    const { ui, attrs } = useUI('kbd', toRef(props, 'ui'), config)
 
-    const ui = computed<Partial<typeof appConfig.ui.kbd>>(() => defu({}, props.ui, appConfig.ui.kbd))
+    const kbdClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.base,
+        ui.value.size[props.size],
+        ui.value.padding,
+        ui.value.rounded,
+        ui.value.font,
+        ui.value.background,
+        ui.value.ring
+      ), props.class)
+    })
 
     return {
       // eslint-disable-next-line vue/no-dupe-keys
-      ui
+      ui,
+      attrs,
+      kbdClass
     }
   }
 })

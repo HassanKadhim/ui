@@ -1,8 +1,8 @@
 <template>
   <component
-    :is="$attrs.onSubmit ? 'form': as"
-    :class="[ui.base, ui.rounded, ui.divide, ui.ring, ui.shadow, ui.background]"
-    v-bind="$attrs"
+    :is="$attrs.onSubmit ? 'form' : as"
+    :class="cardClass"
+    v-bind="attrs"
   >
     <div v-if="$slots.header" :class="[ui.header.base, ui.header.padding, ui.header.background]">
       <slot name="header" />
@@ -17,15 +17,17 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent } from 'vue'
+import { computed, toRef, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import { useUI } from '../../composables/useUI'
+import { mergeConfig } from '../../utils'
+import type { Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { card } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof card>(appConfig.ui.strategy, appConfig.ui.card, card)
 
 export default defineComponent({
   inheritAttrs: false,
@@ -34,20 +36,34 @@ export default defineComponent({
       type: String,
       default: 'div'
     },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.card>>,
-      default: () => appConfig.ui.card
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   setup (props) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
+    const { ui, attrs } = useUI('card', toRef(props, 'ui'), config)
 
-    const ui = computed<Partial<typeof appConfig.ui.card>>(() => defu({}, props.ui, appConfig.ui.card))
+    const cardClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.base,
+        ui.value.rounded,
+        ui.value.divide,
+        ui.value.ring,
+        ui.value.shadow,
+        ui.value.background
+      ), props.class)
+    })
 
     return {
       // eslint-disable-next-line vue/no-dupe-keys
-      ui
+      ui,
+      attrs,
+      cardClass
     }
   }
 })

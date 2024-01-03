@@ -1,71 +1,61 @@
-import { h, cloneVNode, computed, defineComponent } from 'vue'
+import { h, computed, toRef, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
-import { getSlotsChildren } from '../../utils'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { twMerge, twJoin } from 'tailwind-merge'
+import { useUI } from '../../composables/useUI'
+import { mergeConfig, getSlotsChildren } from '../../utils'
+import { useProvideButtonGroup } from '../../composables/useButtonGroup'
+import type { ButtonSize, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { button, buttonGroup } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const buttonConfig = mergeConfig<typeof button>(appConfig.ui.strategy, appConfig.ui.button, button)
+const buttonGroupConfig = mergeConfig<typeof buttonGroup>(appConfig.ui.strategy, appConfig.ui.buttonGroup, buttonGroup)
 
 export default defineComponent({
+  name: 'ButtonGroup',
+  inheritAttrs: false,
   props: {
     size: {
-      type: String,
+      type: String as PropType<ButtonSize>,
       default: null,
       validator (value: string) {
-        return Object.keys(appConfig.ui.button.size).includes(value)
+        return Object.keys(buttonConfig.size).includes(value)
       }
     },
+    orientation: {
+      type: String as PropType<'horizontal' | 'vertical'>,
+      default: 'horizontal',
+      validator (value: string) {
+        return ['horizontal', 'vertical'].includes(value)
+      }
+    },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.buttonGroup>>,
-      default: () => appConfig.ui.buttonGroup
+      type: Object as PropType<Partial<typeof buttonGroupConfig> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   setup (props, { slots }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
-
-    const ui = computed<Partial<typeof appConfig.ui.buttonGroup>>(() => defu({}, props.ui, appConfig.ui.buttonGroup))
+    const { ui, attrs } = useUI('buttonGroup', toRef(props, 'ui'), buttonGroupConfig)
 
     const children = computed(() => getSlotsChildren(slots))
 
-    const rounded = computed(() => ({
-      'rounded-none': { left: 'rounded-s-none', right: 'rounded-e-none' },
-      'rounded-sm': { left: 'rounded-s-sm', right: 'rounded-e-sm' },
-      rounded: { left: 'rounded-s', right: 'rounded-e' },
-      'rounded-md': { left: 'rounded-s-md', right: 'rounded-e-md' },
-      'rounded-lg': { left: 'rounded-s-lg', right: 'rounded-e-lg' },
-      'rounded-xl': { left: 'rounded-s-xl', right: 'rounded-e-xl' },
-      'rounded-2xl': { left: 'rounded-s-2xl', right: 'rounded-e-2xl' },
-      'rounded-3xl': { left: 'rounded-s-3xl', right: 'rounded-e-3xl' },
-      'rounded-full': { left: 'rounded-s-full', right: 'rounded-e-full' }
-    }[ui.value.rounded]))
+    const wrapperClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.wrapper[props.orientation],
+        ui.value.rounded,
+        ui.value.shadow
+      ), props.class)
+    })
 
-    const clones = computed(() => children.value.map((node, index) => {
-      const vProps: any = {}
+    const rounded = computed(() => ui.value.orientation[ui.value.rounded][props.orientation])
 
-      if (props.size) {
-        vProps.size = props.size
-      }
+    useProvideButtonGroup({ orientation: toRef(props, 'orientation'), size: toRef(props, 'size'), ui, rounded })
 
-      vProps.class = node.props.class || ''
-      vProps.class += ' !shadow-none'
-      vProps.ui = node.props.ui || {}
-      vProps.ui.rounded = ''
-
-      if (index === 0) {
-        vProps.ui.rounded = rounded.value.left
-      }
-
-      if (index === children.value.length - 1) {
-        vProps.ui.rounded = rounded.value.right
-      }
-
-      return cloneVNode(node, vProps)
-    }))
-
-    return () => h('div', { class: [ui.value.wrapper, ui.value.rounded, ui.value.shadow] }, clones.value)
+    return () => h('div', { class: wrapperClass.value, ...attrs.value }, children.value)
   }
 })

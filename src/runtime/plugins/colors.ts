@@ -1,6 +1,6 @@
 import { computed } from 'vue'
 import { hexToRgb } from '../utils'
-import { defineNuxtPlugin, useHead, useAppConfig, useNuxtApp } from '#imports'
+import { defineNuxtPlugin, useAppConfig, useNuxtApp, useHead } from '#imports'
 import colors from '#tailwind-config/theme/colors'
 
 export default defineNuxtPlugin(() => {
@@ -12,16 +12,23 @@ export default defineNuxtPlugin(() => {
     const gray: Record<string, string> | undefined = colors[appConfig.ui.gray]
 
     if (!primary) {
-      console.warn(`[@nuxthq/ui] Primary color '${appConfig.ui.primary}' not found in Tailwind config`)
+      console.warn(`[@nuxt/ui] Primary color '${appConfig.ui.primary}' not found in Tailwind config`)
     }
     if (!gray) {
-      console.warn(`[@nuxthq/ui] Gray color '${appConfig.ui.gray}' not found in Tailwind config`)
+      console.warn(`[@nuxt/ui] Gray color '${appConfig.ui.gray}' not found in Tailwind config`)
     }
 
     return `:root {
 ${Object.entries(primary || colors.green).map(([key, value]) => `--color-primary-${key}: ${hexToRgb(value)};`).join('\n')}
+--color-primary-DEFAULT: var(--color-primary-500);
+
 ${Object.entries(gray || colors.cool).map(([key, value]) => `--color-gray-${key}: ${hexToRgb(value)};`).join('\n')}
-}`
+}
+
+.dark {
+  --color-primary-DEFAULT: var(--color-primary-400);
+}
+`
   })
 
   // Head

@@ -1,57 +1,63 @@
 <template>
-  <transition appear v-bind="ui.transition">
-    <div :class="[ui.wrapper, ui.background, ui.rounded, ui.shadow]" @mouseover="onMouseover" @mouseleave="onMouseleave">
+  <Transition appear v-bind="ui.transition">
+    <div
+      :class="wrapperClass"
+      role="status"
+      v-bind="attrs"
+      @mouseover="onMouseover"
+      @mouseleave="onMouseleave"
+    >
       <div :class="[ui.container, ui.rounded, ui.ring]">
-        <div :class="ui.padding">
-          <div class="flex gap-3" :class="{ 'items-start': description, 'items-center': !description }">
-            <UIcon v-if="icon" :name="icon" :class="iconClass" />
-            <UAvatar v-if="avatar" v-bind="{ size: ui.avatar.size, ...avatar }" :class="ui.avatar.base" />
+        <div class="flex" :class="[ui.padding, ui.gap, { 'items-start': description || $slots.description, 'items-center': !description && !$slots.description }]">
+          <UIcon v-if="icon" :name="icon" :class="iconClass" />
+          <UAvatar v-if="avatar" v-bind="{ size: ui.avatar.size, ...avatar }" :class="ui.avatar.base" />
 
-            <div class="w-0 flex-1">
-              <p :class="ui.title">
+          <div :class="ui.inner">
+            <p :class="ui.title">
+              <slot name="title" :title="title">
                 {{ title }}
-              </p>
-              <p v-if="description" :class="ui.description">
+              </slot>
+            </p>
+            <p v-if="(description || $slots.description)" :class="ui.description">
+              <slot name="description" :description="description">
                 {{ description }}
-              </p>
+              </slot>
+            </p>
 
-              <div v-if="description && actions.length" class="mt-3 flex items-center gap-2">
-                <UButton v-for="(action, index) of actions" :key="index" v-bind="{ ...ui.default.actionButton, ...action }" @click.stop="onAction(action)" />
-              </div>
+            <div v-if="(description || $slots.description) && actions.length" :class="ui.actions">
+              <UButton v-for="(action, index) of actions" :key="index" v-bind="{ ...(ui.default.actionButton || {}), ...action }" @click.stop="onAction(action)" />
             </div>
-            <div class="flex-shrink-0 flex items-center gap-3">
-              <div v-if="!description && actions.length" class="flex items-center gap-2">
-                <UButton v-for="(action, index) of actions" :key="index" v-bind="{ ...ui.default.actionButton, ...action }" @click.stop="onAction(action)" />
-              </div>
+          </div>
+          <div v-if="closeButton || (!description && !$slots.description && actions.length)" :class="twMerge(ui.actions, 'mt-0')">
+            <template v-if="!description && !$slots.description && actions.length">
+              <UButton v-for="(action, index) of actions" :key="index" v-bind="{ ...(ui.default.actionButton || {}), ...action }" @click.stop="onAction(action)" />
+            </template>
 
-              <UButton v-if="closeButton" v-bind="{ ...ui.default.closeButton, ...closeButton }" @click.stop="onClose" />
-            </div>
+            <UButton v-if="closeButton" aria-label="Close" v-bind="{ ...(ui.default.closeButton || {}), ...closeButton }" @click.stop="onClose" />
           </div>
         </div>
         <div v-if="timeout" :class="progressClass" :style="progressStyle" />
       </div>
     </div>
-  </transition>
+  </Transition>
 </template>
 
 <script lang="ts">
-import { ref, computed, onMounted, onUnmounted, watchEffect, defineComponent } from 'vue'
+import { ref, computed, toRef, onMounted, onUnmounted, watchEffect, defineComponent } from 'vue'
 import type { PropType } from 'vue'
-import { defu } from 'defu'
+import { twMerge, twJoin } from 'tailwind-merge'
 import UIcon from '../elements/Icon.vue'
 import UAvatar from '../elements/Avatar.vue'
 import UButton from '../elements/Button.vue'
+import { useUI } from '../../composables/useUI'
 import { useTimer } from '../../composables/useTimer'
-import type { NotificationAction } from '../../types'
-import type { Avatar} from '../../types/avatar'
-import type { Button } from '../../types/button'
-import { classNames } from '../../utils'
-import { useAppConfig } from '#imports'
-// TODO: Remove
+import { mergeConfig } from '../../utils'
+import type { Avatar, Button, NotificationColor, NotificationAction, Strategy } from '../../types'
 // @ts-expect-error
 import appConfig from '#build/app.config'
+import { notification } from '#ui/ui.config'
 
-// const appConfig = useAppConfig()
+const config = mergeConfig<typeof notification>(appConfig.ui.strategy, appConfig.ui.notification, notification)
 
 export default defineComponent({
   components: {
@@ -59,6 +65,7 @@ export default defineComponent({
     UAvatar,
     UButton
   },
+  inheritAttrs: false,
   props: {
     id: {
       type: [String, Number],
@@ -74,19 +81,19 @@ export default defineComponent({
     },
     icon: {
       type: String,
-      default: () => appConfig.ui.notification.default.icon
+      default: () => config.default.icon
     },
     avatar: {
-      type: Object as PropType<Partial<Avatar>>,
+      type: Object as PropType<Avatar>,
       default: null
     },
     closeButton: {
-      type: Object as PropType<Partial<Button>>,
-      default: () => appConfig.ui.notification.default.closeButton
+      type: Object as PropType<Button>,
+      default: () => config.default.closeButton as Button
     },
     timeout: {
       type: Number,
-      default: 5000
+      default: () => config.default.timeout
     },
     actions: {
       type: Array as PropType<NotificationAction[]>,
@@ -97,26 +104,43 @@ export default defineComponent({
       default: null
     },
     color: {
-      type: String,
-      default: () => appConfig.ui.notification.default.color,
+      type: String as PropType<NotificationColor>,
+      default: () => config.default.color,
       validator (value: string) {
         return ['gray', ...appConfig.ui.colors].includes(value)
       }
     },
+    class: {
+      type: [String, Object, Array] as PropType<any>,
+      default: () => ''
+    },
     ui: {
-      type: Object as PropType<Partial<typeof appConfig.ui.notification>>,
-      default: () => appConfig.ui.notification
+      type: Object as PropType<Partial<typeof config> & { strategy?: Strategy }>,
+      default: () => ({})
     }
   },
   emits: ['close'],
   setup (props, { emit }) {
-    // TODO: Remove
-    const appConfig = useAppConfig()
-
-    const ui = computed<Partial<typeof appConfig.ui.notification>>(() => defu({}, props.ui, appConfig.ui.notification))
+    const { ui, attrs } = useUI('notification', toRef(props, 'ui'), config)
 
     let timer: any = null
     const remaining = ref(props.timeout)
+
+    const wrapperClass = computed(() => {
+      return twMerge(twJoin(
+        ui.value.wrapper,
+        ui.value.background?.replaceAll('{color}', props.color),
+        ui.value.rounded,
+        ui.value.shadow
+      ), props.class)
+    })
+
+    const progressClass = computed(() => {
+      return twJoin(
+        ui.value.progress.base,
+        ui.value.progress.background?.replaceAll('{color}', props.color)
+      )
+    })
 
     const progressStyle = computed(() => {
       const remainingPercent = remaining.value / props.timeout * 100
@@ -124,15 +148,8 @@ export default defineComponent({
       return { width: `${remainingPercent || 0}%` }
     })
 
-    const progressClass = computed(() => {
-      return classNames(
-        ui.value.progress.base,
-        ui.value.progress.background?.replaceAll('{color}', props.color)
-      )
-    })
-
     const iconClass = computed(() => {
-      return classNames(
+      return twJoin(
         ui.value.icon.base,
         ui.value.icon.color?.replaceAll('{color}', props.color)
       )
@@ -197,13 +214,16 @@ export default defineComponent({
     return {
       // eslint-disable-next-line vue/no-dupe-keys
       ui,
-      progressStyle,
+      attrs,
+      wrapperClass,
       progressClass,
+      progressStyle,
       iconClass,
       onMouseover,
       onMouseleave,
       onClose,
-      onAction
+      onAction,
+      twMerge
     }
   }
 })

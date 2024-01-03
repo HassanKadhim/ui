@@ -1,18 +1,20 @@
 import { ref, onMounted, watchEffect } from 'vue'
 import type { Ref } from 'vue'
-import { popperGenerator, defaultModifiers, VirtualElement } from '@popperjs/core/lib/popper-lite'
+import { popperGenerator, defaultModifiers } from '@popperjs/core/lib/popper-lite'
+import type { VirtualElement } from '@popperjs/core/lib/popper-lite'
 import type { Instance } from '@popperjs/core'
-import { omitBy, isUndefined } from 'lodash-es'
 import flip from '@popperjs/core/lib/modifiers/flip'
 import offset from '@popperjs/core/lib/modifiers/offset'
 import preventOverflow from '@popperjs/core/lib/modifiers/preventOverflow'
 import computeStyles from '@popperjs/core/lib/modifiers/computeStyles'
 import eventListeners from '@popperjs/core/lib/modifiers/eventListeners'
-import { MaybeElement, unrefElement } from '@vueuse/core'
-import type { PopperOptions } from '../types'
+import arrowModifier from '@popperjs/core/lib/modifiers/arrow'
+import { unrefElement } from '@vueuse/core'
+import type { MaybeElement } from '@vueuse/core'
+import type { PopperOptions } from '../types/popper'
 
 export const createPopper = popperGenerator({
-  defaultModifiers: [...defaultModifiers, offset, flip, preventOverflow, computeStyles, eventListeners]
+  defaultModifiers: [...defaultModifiers, offset, flip, preventOverflow, computeStyles, eventListeners, arrowModifier]
 })
 
 export function usePopper ({
@@ -24,6 +26,7 @@ export function usePopper ({
   adaptive = true,
   scroll = true,
   resize = true,
+  arrow = false,
   placement,
   strategy
 }: PopperOptions, virtualReference?: Ref<Element | VirtualElement>) {
@@ -43,36 +46,53 @@ export function usePopper ({
       if (!(popperEl instanceof HTMLElement)) { return }
       if (!referenceEl) { return }
 
-      instance.value = createPopper(referenceEl, popperEl, omitBy({
-        placement,
-        strategy,
-        modifiers: [{
-          name: 'flip',
-          enabled: !locked
-        }, {
-          name: 'preventOverflow',
-          options: {
-            padding: overflowPadding
+      const config: Record<string, any> = {
+        modifiers: [
+          {
+            name: 'flip',
+            enabled: !locked
+          },
+          {
+            name: 'preventOverflow',
+            options: {
+              padding: overflowPadding
+            }
+          },
+          {
+            name: 'offset',
+            options: {
+              offset: [offsetSkid, offsetDistance]
+            }
+          },
+          {
+            name: 'computeStyles',
+            options: {
+              adaptive,
+              gpuAcceleration
+            }
+          },
+          {
+            name: 'eventListeners',
+            options: {
+              scroll,
+              resize
+            }
+          },
+          {
+            name: 'arrow',
+            enabled: arrow
           }
-        }, {
-          name: 'offset',
-          options: {
-            offset: [offsetSkid, offsetDistance]
-          }
-        }, {
-          name: 'computeStyles',
-          options: {
-            adaptive,
-            gpuAcceleration
-          }
-        }, {
-          name: 'eventListeners',
-          options: {
-            scroll,
-            resize
-          }
-        }]
-      }, isUndefined))
+        ]
+      }
+
+      if (placement) {
+        config.placement = placement
+      }
+      if (strategy) {
+        config.strategy = strategy
+      }
+
+      instance.value = createPopper(referenceEl, popperEl, config)
 
       onInvalidate(instance.value.destroy)
     })

@@ -3,9 +3,6 @@
 # Restore all git changes
 git restore -s@ -SW  -- .
 
-# Resolve pnpm
-pnpm install
-
 # Update token
 if [[ ! -z ${NODE_AUTH_TOKEN} ]] ; then
   echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
@@ -15,5 +12,5 @@ if [[ ! -z ${NODE_AUTH_TOKEN} ]] ; then
 fi
 
 # Release package
-echo "Publishing @nuxthq/ui"
+echo "Publishing @nuxt/ui"
 npm publish -q --access public

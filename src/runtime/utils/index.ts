@@ -1,8 +1,38 @@
-export function classNames (...classes: any[string]) {
-  return classes.filter(Boolean).join(' ')
+import { defu, createDefu } from 'defu'
+import { extendTailwindMerge } from 'tailwind-merge'
+import type { Strategy } from '../types'
+
+const customTwMerge = extendTailwindMerge<string, string>({
+  extend: {
+    classGroups: {
+      icons: [(classPart: string) => /^i-/.test(classPart)]
+    }
+  }
+})
+
+const defuTwMerge = createDefu((obj, key, value, namespace) => {
+  if (namespace === 'default' || namespace.startsWith('default.')) {
+    return false
+  }
+  if (namespace.endsWith('avatar') && key === 'size') {
+    return false
+  }
+  if (typeof obj[key] === 'string' && typeof value === 'string' && obj[key] && value) {
+    // @ts-ignore
+    obj[key] = customTwMerge(obj[key], value)
+    return true
+  }
+})
+
+export function mergeConfig<T> (strategy: Strategy, ...configs): T {
+  if (strategy === 'override') {
+    return defu({}, ...configs) as T
+  }
+
+  return defuTwMerge({}, ...configs) as T
 }
 
-export const hexToRgb = (hex: string) => {
+export function hexToRgb (hex: string) {
   // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
   const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i
   hex = hex.replace(shorthandRegex, function (_, r, g, b) {
@@ -15,9 +45,9 @@ export const hexToRgb = (hex: string) => {
     : null
 }
 
-export const getSlotsChildren = (slots: any) => {
+export function getSlotsChildren (slots: any) {
   let children = slots.default?.()
-  if (children.length) {
+  if (children?.length) {
     children = children.flatMap(c => {
       if (typeof c.type === 'symbol') {
         if (typeof c.children === 'string') {
@@ -31,5 +61,16 @@ export const getSlotsChildren = (slots: any) => {
       return c
     }).filter(Boolean)
   }
-  return children
+  return children || []
 }
+
+/**
+ * "123-foo" will be parsed to 123
+ * This is used for the .number modifier in v-model
+ */
+export function looseToNumber (val: any): any {
+  const n = parseFloat(val)
+  return isNaN(n) ? val : n
+}
+
+export * from './lodash'
